@@ -30,7 +30,7 @@ _local_site = Path.home() / ".local" / "lib" / f"python{sys.version_info.major}.
 if _local_site.exists():
     sys.path.insert(0, str(_local_site))
 
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, jsonify, render_template_string, request, send_file
 from lxml import etree
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -3302,6 +3302,26 @@ def _no_cache(resp):
 
 # HTML is loaded from a separate file for clarity
 HTML_PATH = SCRIPT_DIR / "_ui.html"
+
+@app.route("/icon.png")
+def icon_png():
+    p = SCRIPT_DIR / "icon.png"
+    if not p.is_file():
+        p = SCRIPT_DIR / "icon-512.png"
+    if not p.is_file():
+        return ("", 404)
+    return send_file(p, mimetype="image/png")
+
+
+@app.route("/favicon.ico")
+def favicon():
+    p = SCRIPT_DIR / "icon-256.png"
+    if not p.is_file():
+        p = SCRIPT_DIR / "icon.png"
+    if not p.is_file():
+        return ("", 404)
+    return send_file(p, mimetype="image/png")
+
 
 @app.route("/")
 def index():

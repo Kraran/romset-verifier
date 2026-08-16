@@ -11,9 +11,15 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ffc59/romset-verifier.git"
+    "url": "https://github.com/Kraran/romset-verifier.git"
   },
   "devDependencies": {
     "electron": "^33.2.0"
-  }
+  },
+  "build": {
+    "appId": "com.romset.verifier",
+    "productName": "RomSet Verifier",
+    "icon": "icon.png"
+  },
+  "icon": "icon.png"
 }
