@@ -8,3 +8,5 @@ __pycache__/
 repair.log
 .DS_Store
 Thumbs.db
+venv/
+install.json
