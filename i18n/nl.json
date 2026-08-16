@@ -272,5 +272,19 @@
   "tools.done": "OK",
   "tools.fail": "Mislukt",
   "tools.saved": "Bespaard",
-  "tools.browse_title": "Map om te hercomprimeren"
+  "tools.browse_title": "Map om te hercomprimeren",
+  "about.title": "About",
+  "about.open_title": "About RomSet Verifier",
+  "about.desc": "Local ROM set auditor and repair tool for RetroBat, Batocera and Recalbox. Verifies No-Intro, Redump, MAME and FBNeo (non-merged), repairs ZIPs and manages multi-system profiles.",
+  "about.version": "Version",
+  "about.date": "Date",
+  "about.author": "Author",
+  "about.license": "License",
+  "about.repo": "Repository",
+  "about.stack": "Stack",
+  "about.note": "Beta software, provided as-is. No ROMs or commercial DAT databases are distributed. DAT files are downloaded from official projects (No-Intro, Redump, MAME, FBNeo).",
+  "about.github": "GitHub repo",
+  "about.portrait_hint": "GitHub profile →",
+  "about.author_github": "GitHub — Kraran",
+  "about.author_page": "Kraran profile"
 }

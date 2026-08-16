@@ -3303,6 +3303,14 @@ def _no_cache(resp):
 # HTML is loaded from a separate file for clarity
 HTML_PATH = SCRIPT_DIR / "_ui.html"
 
+
+@app.route("/about-author.jpg")
+def about_author_img():
+    p = SCRIPT_DIR / "about-author.jpg"
+    if not p.is_file():
+        return ("", 404)
+    return send_file(p, mimetype="image/jpeg")
+
 @app.route("/icon.png")
 def icon_png():
     p = SCRIPT_DIR / "icon.png"
@@ -3315,7 +3323,39 @@ def icon_png():
 
 @app.route("/favicon.ico")
 def favicon():
+    p = SCRIPT_DIR / "favicon.ico"
+    if p.is_file():
+        return send_file(p, mimetype="image/x-icon")
+    for name in ("icon-32.png", "icon-256.png", "icon.png"):
+        p = SCRIPT_DIR / name
+        if p.is_file():
+            return send_file(p, mimetype="image/png")
+    return ("", 404)
+
+
+@app.route("/icon-32.png")
+def icon_32():
+    p = SCRIPT_DIR / "icon-32.png"
+    if not p.is_file():
+        p = SCRIPT_DIR / "icon.png"
+    if not p.is_file():
+        return ("", 404)
+    return send_file(p, mimetype="image/png")
+
+
+@app.route("/icon-256.png")
+def icon_256():
     p = SCRIPT_DIR / "icon-256.png"
+    if not p.is_file():
+        p = SCRIPT_DIR / "icon.png"
+    if not p.is_file():
+        return ("", 404)
+    return send_file(p, mimetype="image/png")
+
+
+@app.route("/icon-512.png")
+def icon_512():
+    p = SCRIPT_DIR / "icon-512.png"
     if not p.is_file():
         p = SCRIPT_DIR / "icon.png"
     if not p.is_file():

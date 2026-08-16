@@ -183,7 +183,9 @@ function waitForServer(timeoutMs = 15000) {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    icon: path.join(__dirname, 'icon.png'),
+    icon: fs.existsSync(path.join(__dirname, 'icon.png'))
+      ? path.join(__dirname, 'icon.png')
+      : undefined,
     width: 1280,
     height: 800,
     minWidth: 900,

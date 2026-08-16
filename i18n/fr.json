@@ -272,5 +272,19 @@
   "tools.done": "OK",
   "tools.fail": "Échecs",
   "tools.saved": "Économisé",
-  "tools.browse_title": "Dossier à recompresser"
+  "tools.browse_title": "Dossier à recompresser",
+  "about.title": "À propos",
+  "about.open_title": "À propos de RomSet Verifier",
+  "about.desc": "Outil local d’audit et de réparation de romsets pour RetroBat, Batocera et Recalbox. Vérifie No-Intro, Redump, MAME et FBNeo (non-merged), répare les ZIP et gère des profils multi-systèmes.",
+  "about.version": "Version",
+  "about.date": "Date",
+  "about.author": "Auteur",
+  "about.license": "Licence",
+  "about.repo": "Dépôt",
+  "about.stack": "Techno",
+  "about.note": "Logiciel bêta fourni « tel quel ». Aucune ROM ni base DAT commerciale n’est distribuée. Les DAT se téléchargent depuis les projets officiels (No-Intro, Redump, MAME, FBNeo).",
+  "about.github": "Dépôt GitHub",
+  "about.portrait_hint": "Profil GitHub →",
+  "about.author_github": "GitHub — Kraran",
+  "about.author_page": "Profil Kraran"
 }
