@@ -1,0 +1,10 @@
+roms/
+dat/
+profiles/
+cache/
+node_modules/
+__pycache__/
+*.log
+repair.log
+.DS_Store
+Thumbs.db

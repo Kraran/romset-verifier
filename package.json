@@ -1,0 +1,19 @@
+{
+  "name": "romset-verifier",
+  "version": "1.0.0-beta",
+  "description": "RomSet Verifier — ROM set auditor for RetroBat / Batocera / Recalbox (No-Intro, Redump, MAME, FBNeo)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --enable-logging"
+  },
+  "author": "Franck Fornasari",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ffc59/romset-verifier.git"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0"
+  }
+}

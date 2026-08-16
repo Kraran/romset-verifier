@@ -1,0 +1,3654 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RomSet Verifier</title>
+<style>
+:root {
+  --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --border: #30363d;
+  --text: #e6edf3; --text2: #8b949e; --accent: #2f81f7; --accent-h: #58a6ff;
+  --green: #3fb950; --amber: #d29922; --red: #f85149; --grey: #6e7681;
+  --radius: 8px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
+header h1 { font-size: 16px; font-weight: 600; white-space: nowrap; }
+header h1 span { color: var(--accent); }
+.paths { display: flex; gap: 10px; flex: 1; min-width: 0; }
+.path-group { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.path-group label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+.path-group input { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius); padding: 6px 10px; font-size: 13px; }
+.path-group input:focus { outline: none; border-color: var(--accent); }
+button { background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius); padding: 6px 12px; font-size: 13px; cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s; }
+button:hover { background: #30363d; border-color: #484f58; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button.primary:hover { background: var(--accent-h); }
+button.amber { background: #9e6a03; border-color: #9e6a03; color: #fff; }
+button.red { background: #da3633; border-color: #da3633; color: #fff; }
+button:disabled { opacity: .4; cursor: not-allowed; }
+.subdir-opt {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; color: var(--text2); cursor: pointer; user-select: none;
+  white-space: nowrap; padding: 0 4px;
+}
+.subdir-opt input { accent-color: var(--accent); cursor: pointer; }
+#optSubdirDepth {
+  background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+  border-radius: var(--radius); padding: 4px 6px; font-size: 12px;
+}
+#optSubdirDepth:disabled { opacity: .4; }
+
+.summary { display: flex; gap: 8px; padding: 8px 16px; background: var(--bg2); border-bottom: 1px solid var(--border); flex-shrink: 0; align-items: center; flex-wrap: wrap; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--bg3); border: 1px solid var(--border); cursor: pointer; user-select: none; }
+.pill:hover { border-color: var(--accent); }
+.pill.active { outline: 2px solid var(--accent); }
+.pill.good { color: var(--green); border-color: #238636; }
+.pill.rename { color: var(--amber); border-color: #9e6a03; }
+.pill.bad { color: var(--red); border-color: #da3633; }
+.pill.missing { color: var(--grey); }
+.pill.total { color: var(--accent); border-color: var(--accent); }
+.summary .status-text { margin-left: auto; font-size: 12px; color: var(--text2); }
+.toolbar { display: flex; gap: 8px; padding: 8px 16px; background: var(--bg2); border-bottom: 1px solid var(--border); flex-shrink: 0; align-items: center; }
+.toolbar input { flex: 1; max-width: 320px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius); padding: 6px 10px; font-size: 13px; }
+.toolbar input:focus { outline: none; border-color: var(--accent); }
+.toolbar .spacer { flex: 1; }
+.main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.table-wrap { flex: 1; overflow: auto; }
+table.results { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+table.results thead { position: sticky; top: 0; z-index: 5; }
+table.results th {
+  background: var(--bg3); border-bottom: 2px solid var(--border); border-right: 1px solid var(--border);
+  padding: 0; text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .03em; color: var(--text2); user-select: none; white-space: nowrap;
+}
+table.results th .th-inner {
+  display: flex; align-items: center; gap: 4px; padding: 8px 10px; cursor: pointer;
+}
+table.results th .th-inner:hover { color: var(--text); background: #30363d; }
+table.results th.sorted-asc .sort-ico::after { content: " ▲"; color: var(--accent); }
+table.results th.sorted-desc .sort-ico::after { content: " ▼"; color: var(--accent); }
+table.results th .filter-ico { opacity: .35; font-size: 10px; margin-left: auto; }
+table.results th.filtered .filter-ico { opacity: 1; color: var(--accent); }
+table.results th .col-filter {
+  display: none; width: 100%; border: none; border-top: 1px solid var(--border);
+  background: var(--bg); color: var(--text); padding: 5px 8px; font-size: 12px; font-weight: 400;
+  text-transform: none; letter-spacing: 0;
+}
+table.results th.filter-open .col-filter { display: block; }
+table.results td {
+  padding: 6px 10px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle;
+}
+table.results tr:hover td { background: var(--bg3); }
+table.results tr.selected td { background: #1f6feb33; }
+table.results tr { cursor: pointer; }
+.st { display: inline-block; font-size: 11px; font-weight: 700; min-width: 64px; padding: 2px 7px; border-radius: 4px; text-align: center; }
+.st-good { background: #23863633; color: var(--green); }
+.st-rename { background: #9e6a0333; color: var(--amber); }
+.st-bad { background: #da363333; color: var(--red); }
+.st-missing { background: #6e768133; color: var(--grey); }
+.st-error { background: #da363333; color: var(--red); }
+.st-deleted { background: #6e768133; color: var(--grey); }
+.mono { font-family: var(--mono); font-size: 12px; }
+.actions-bar { padding: 10px 16px; border-top: 1px solid var(--border); display: flex; gap: 10px; flex-shrink: 0; background: var(--bg2); align-items: center; }
+.actions-bar .info { font-size: 12px; color: var(--text2); margin-right: 8px; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 100; align-items: center; justify-content: center; }
+#browserModal { z-index: 260; }
+#browserModal .modal {
+  width: min(960px, 96vw);
+  max-width: 96vw;
+  max-height: 90vh;
+  min-height: 520px;
+}
+#browserModal .modal-list {
+  min-height: 360px;
+  max-height: calc(90vh - 180px);
+}
+#browserModal .modal-path {
+  font-size: 12.5px;
+  padding: 10px 18px;
+}
+.browser-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  table-layout: fixed;
+}
+.browser-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg2);
+  color: var(--text2);
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.browser-table th:hover { color: var(--text); }
+.browser-table th.sorted-asc::after { content: ' ▲'; font-size: 10px; color: var(--accent); }
+.browser-table th.sorted-desc::after { content: ' ▼'; font-size: 10px; color: var(--accent); }
+.browser-table td {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.browser-table tr.browser-row { cursor: pointer; }
+.browser-table tr.browser-row:hover { background: var(--bg3); }
+.browser-table .col-name {
+  width: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.browser-table .col-date {
+  width: 148px;
+  color: var(--text2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.browser-table .col-size {
+  width: 100px;
+  text-align: right;
+  color: var(--text2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.browser-table .icon { margin-right: 8px; opacity: .8; }
+
+#confirmModal { z-index: 270; }
+#detailModal { z-index: 265; }
+#optionsModal { z-index: 280; }
+button.lang-active { border-color: var(--accent); color: var(--accent-h); background: #1f6feb33; }
+
+#reportModal { z-index: 270; }
+
+.modal-bg.open { display: flex; }
+.modal { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; width: 560px; max-width: 95vw; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 16px 48px rgba(0,0,0,.5); }
+.modal-header { padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+.modal-header h3 { font-size: 15px; flex: 1; }
+.modal-path { padding: 8px 16px; font-size: 12px; color: var(--text2); border-bottom: 1px solid var(--border); font-family: var(--mono); word-break: break-all; }
+.drive-bar { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--bg); }
+.drive-chip { background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; font-family: var(--mono); }
+.drive-chip:hover { border-color: var(--accent); color: var(--accent-h); }
+.drive-chip.active { background: #1f6feb33; border-color: var(--accent); color: var(--accent-h); }
+.drive-bar-label { font-size: 11px; color: var(--text2); align-self: center; margin-right: 4px; }
+.modal-list { flex: 1; overflow-y: auto; min-height: 200px; }
+.modal-item { padding: 8px 16px; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.modal-item:hover { background: var(--bg3); }
+.modal-item .icon { width: 20px; text-align: center; opacity: .7; }
+.modal-footer { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+.loading-overlay {
+  display: none; position: fixed; inset: 0; z-index: 300;
+  background: rgba(13, 17, 23, 0.72);
+  align-items: center; justify-content: center; flex-direction: column; gap: 16px;
+}
+.loading-overlay.open { display: flex; }
+.loading-spinner {
+  width: 48px; height: 48px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text {
+  font-size: 14px; color: var(--text); font-weight: 500;
+  text-align: center; max-width: 360px; padding: 0 16px;
+}
+.loading-sub {
+  font-size: 12px; color: var(--text2); margin-top: -8px;
+}
+body.loading-active { cursor: wait; }
+body.loading-active * { cursor: wait !important; }
+
+.comp-ok { color: #3fb950; }
+.comp-rename { color: #d29922; }
+.comp-missing { color: #8b949e; }
+.comp-bad_crc, .comp-bad_size { color: #f85149; }
+.comp-nodump, .comp-optional { color: #8b949e; font-style: italic; }
+.comp-extra { color: #a371f7; }
+.detail-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.detail-table th {
+  text-align: left; padding: 6px 10px; background: var(--bg); color: var(--text2);
+  border-bottom: 1px solid var(--border); position: sticky; top: 0; font-weight: 600;
+}
+.detail-table td { padding: 5px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.detail-table tr:hover td { background: var(--bg3); }
+.detail-badge {
+  display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+}
+.detail-badge.available { background:#1f6feb33; color:#58a6ff; }
+.comp-available { color:#58a6ff; }
+.detail-badge.ok { background: #23863633; color: #3fb950; }
+.detail-badge.rename { background: #9e6a0333; color: #d29922; }
+.detail-badge.missing { background: #6e768133; color: #8b949e; }
+.detail-badge.bad_crc, .detail-badge.bad_size { background: #da363333; color: #f85149; }
+.detail-badge.nodump, .detail-badge.optional { background: #6e768122; color: #8b949e; }
+.detail-badge.extra { background: #8957e533; color: #a371f7; }
+.toast {
+ position: fixed; bottom: 24px; right: 24px; background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 10px 16px; border-radius: var(--radius); font-size: 13px; z-index: 200; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: 1; }
+.toast.ok { border-color: var(--green); }
+.toast.err { border-color: var(--red); }
+.modal-danger { border-color: var(--red); box-shadow: 0 0 0 1px var(--red), 0 16px 48px rgba(0,0,0,.5); }
+.modal-danger .modal-header { background: #da363322; border-bottom-color: var(--red); }
+.modal-danger .modal-header h3 { color: var(--red); }
+.modal-danger .warn-body { padding: 16px; font-size: 14px; line-height: 1.5; }
+.modal-danger .warn-body strong { color: var(--red); }
+.modal-danger .modal-footer { border-top-color: #da363355; }
+button.danger { background: #da3633; border-color: #da3633; color: #fff; font-weight: 600; }
+button.danger:hover { background: #f85149; border-color: #f85149; }
+.modal-report { width: 440px; }
+.modal-report .modal-header h3 { color: var(--accent); }
+.report-body { padding: 16px; font-size: 13px; line-height: 1.55; max-height: 50vh; overflow-y: auto; }
+.report-body .stat { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.report-body .stat:last-child { border-bottom: none; }
+.report-body .stat b { font-variant-numeric: tabular-nums; }
+.report-body .ok { color: var(--green); }
+.report-body .fail { color: var(--red); }
+.report-body .list-fail { margin-top: 10px; font-size: 12px; color: var(--text2); }
+.report-body .list-fail li { margin-left: 16px; margin-top: 2px; }
+.report-items { margin-top: 12px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.report-item { padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 12px; font-family: var(--mono); }
+.report-item:last-child { border-bottom: none; }
+.report-item .action { color: var(--accent); font-weight: 600; margin-right: 6px; font-family: var(--font); }
+.report-item .from { color: var(--text2); text-decoration: line-through; }
+.report-item .to { color: var(--green); }
+.report-item .fail-line { color: var(--red); }
+.report-summary { margin-bottom: 4px; color: var(--text2); font-size: 12px; }
+.col-check { width: 36px; text-align: center; }
+.col-check input { width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent); }
+.col-status { width: 90px; }
+.col-zip { width: 22%; }
+.col-rom { width: 22%; }
+.col-expected { width: 12%; }
+.col-desc { width: 22%; }
+.col-size { width: 110px; }
+.col-crc { width: 100px; }
+.col-parent { width: 110px; }
+.col-mtype { width: 90px; }
+.col-bios { width: 90px; }
+.col-drv { width: 100px; }
+th.arcade-only, td.arcade-only { display: none; }
+.dats-tab {
+  background: transparent; border: none; color: var(--text2);
+  padding: 10px 16px; cursor: pointer; font-size: 13px;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.dats-tab:hover { color: var(--text); }
+.dats-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.mame-section { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+.mame-sec-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--text); }
+.mame-label { font-size: 12px; color: var(--text2); white-space: nowrap; }
+.mame-input {
+  background: var(--bg2); border: 1px solid var(--border); color: var(--text);
+  border-radius: var(--radius); padding: 6px 10px; font-size: 13px;
+}
+.mame-checks { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.mame-checks label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.mame-check-inline { font-size: 12px; margin-right: 10px; cursor: pointer; }
+.cat-tags {
+  display: flex; flex-wrap: wrap; gap: 6px; min-height: 34px;
+  padding: 8px; background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.cat-tags:empty::before {
+  content: '(aucune exclusion — ajoutez un mot-clé ou un preset)';
+  color: var(--text2); font-size: 12px;
+}
+.cat-tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #3d2a2a; color: #f0b4b4; border: 1px solid #8b3a3a;
+  border-radius: 999px; padding: 3px 10px; font-size: 12px;
+}
+.cat-tag button {
+  background: transparent; border: none; color: #f0b4b4;
+  cursor: pointer; font-size: 14px; line-height: 1; padding: 0 0 0 2px;
+}
+.cat-tag button:hover { color: #fff; }
+button.linkish {
+
+  background: none; border: none; color: var(--accent); cursor: pointer;
+  font-size: 11px; padding: 0 2px; text-decoration: underline;
+}
+#datsModal .modal { width: 780px; max-height: 92vh; display: flex; flex-direction: column; }
+
+
+
+/* ---- Collection / Profils ---- */
+.view-tabs {
+  display: flex; gap: 0; padding: 0 16px;
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+}
+.view-tab {
+  background: transparent; border: none; color: var(--text2);
+  padding: 10px 18px; cursor: pointer; font-size: 13px; font-weight: 600;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.view-tab:hover { color: var(--text); }
+.view-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+#viewCollection { display: none; padding: 16px; flex-direction: column; gap: 14px; min-height: 0; flex: 1; overflow: auto; }
+body.view-collection .paths { display: none; }
+body.view-collection #summary,
+body.view-collection .toolbar,
+body.view-collection .main { display: none !important; }
+body.view-collection #viewCollection { display: flex; }
+.prof-cards { display: flex; flex-direction: column; gap: 10px; max-width: 820px; }
+.prof-card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px 16px; cursor: pointer; transition: border-color .15s;
+}
+.prof-card:hover { border-color: var(--accent); }
+.prof-card h3 { margin: 0 0 4px; font-size: 15px; }
+.prof-card .meta { color: var(--text2); font-size: 12px; }
+.prof-card .stats { margin-top: 8px; display: flex; gap: 12px; font-size: 12px; color: var(--text2); }
+.prof-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.prof-stats-bar {
+  display: flex; gap: 10px; flex-wrap: wrap;
+}
+.prof-stat {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 10px 16px; min-width: 90px; text-align: center;
+}
+.prof-stat b { display: block; font-size: 18px; color: var(--text); }
+.prof-stat span { font-size: 11px; color: var(--text2); }
+.prof-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.prof-table th {
+  text-align: left; padding: 8px 10px; color: var(--text2); font-weight: 600;
+  border-bottom: 1px solid var(--border); background: var(--bg2); position: sticky; top: 0;
+}
+.prof-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); }
+.prof-table tr:hover td { background: var(--bg3); }
+.prof-table tr.selected td { background: #1f6feb22; }
+.dat-st-ok { color: var(--green); }
+.dat-st-missing { color: var(--red); }
+.dat-st-skip { color: var(--grey); }
+.prof-dat-link {
+  color: inherit; text-decoration: none; border-bottom: 1px dashed currentColor;
+  cursor: pointer;
+}
+.prof-dat-link:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.prof-dat-cell { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.prof-form label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 4px; }
+.prof-form input[type=text], .prof-form select {
+  width: 100%; background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text); border-radius: var(--radius); padding: 8px 10px; margin-bottom: 12px;
+}
+
+body.arcade-mode th.arcade-only, body.arcade-mode td.arcade-only { display: table-cell; }
+.st-incomplete { background: #9e6a03; color: #fff; }
+.drv-good { color: var(--green); }
+.drv-imperfect { color: #d29922; }
+.drv-preliminary { color: var(--red); }
+
+</style>
+</head>
+<body>
+<header>
+  <h1>🕹️ <span>RomSet</span> Verifier <small style="color:var(--text2);font-weight:400;font-size:11px">v1.0.0-beta</small></h1>
+  <div class="paths">
+    <div class="path-group">
+      <label data-i18n="header.dat">DAT</label>
+      <input id="datPath" type="text" value="{{ dat_default }}">
+      <button type="button" data-i18n="header.browse" onclick="openBrowser('dat')">Parcourir…</button>
+      <button type="button" class="primary" data-i18n="header.load" onclick="loadDat()">Charger</button>
+    </div>
+    <div class="path-group">
+      <label data-i18n="header.roms">ROMs</label>
+      <input id="romsPath" type="text" value="{{ roms_default }}">
+      <button type="button" data-i18n="header.browse" onclick="openBrowser('roms')">Parcourir…</button>
+      <button type="button" class="primary" data-i18n="header.scan" onclick="doScan()">Scanner</button>
+      <label class="subdir-opt" title="Inclure les fichiers dans les sous-dossiers (multi-disques, CHD…)" data-i18n-title="scan.subdirs_title">
+        <input type="checkbox" id="optSubdirs" onchange="onSubdirsToggle()">
+        <span data-i18n="scan.subdirs">Sous-dossiers</span>
+      </label>
+      <select id="optSubdirDepth" disabled title="Profondeur" data-i18n-title="scan.depth_title" onchange="saveSubdirsPrefs()">
+        <option value="1">1</option>
+        <option value="2">2</option>
+      </select>
+      <button type="button" id="btnEnrichAdb" data-i18n="header.adb" data-i18n-title="header.adb_title" onclick="enrichAdb()" title="Récupérer les noms complets via Arcade Database (ADB)" style="display:none">🌐 Noms ADB</button>
+      <button type="button" data-i18n="header.tools" onclick="openToolsModal()" title="Outils">🛠 Outils</button>
+      <button type="button" class="red" data-i18n="header.quit" onclick="quitApp()" title="Fermer l'application et arrêter le serveur">⏻ Quitter</button>
+    </div>
+  </div>
+</header>
+
+<div class="view-tabs">
+  <button type="button" class="view-tab active" id="tabScan" onclick="switchAppView('scan')" data-i18n="nav.scan">Scan</button>
+  <button type="button" class="view-tab" id="tabCollection" onclick="switchAppView('collection')" data-i18n="nav.collection">Collection</button>
+</div>
+
+<div id="viewCollection">
+  <div id="profListPanel">
+    <div class="prof-toolbar">
+      <h2 style="margin:0;font-size:16px;flex:1" data-i18n="prof.title">Profils collection</h2>
+      <button type="button" class="primary" onclick="openNewProfile()" data-i18n="prof.new">+ Nouveau profil</button>
+    </div>
+    <div class="prof-cards" id="profCards">
+      <div style="color:var(--text2);font-size:13px" data-i18n="prof.empty">Aucun profil — créez-en un pour gérer une install RetroBat / Batocera.</div>
+    </div>
+  </div>
+
+  <div id="profDetailPanel" style="display:none">
+    <div class="prof-toolbar">
+      <button type="button" onclick="backToProfList()">←</button>
+      <h2 style="margin:0;font-size:16px;flex:1" id="profDetailTitle">Profil</h2>
+      <button type="button" class="primary" onclick="scanSelectedSystems()" data-i18n="prof.scan_sel">Scanner sélection</button>
+      <button type="button" onclick="scanAllSystems()" data-i18n="prof.scan_all">Scanner tout</button>
+      <button type="button" onclick="resetProfileDats()" data-i18n="prof.reset_dats" title="Réassigner les DAT suggérés automatiquement">Réinit. DAT</button>
+      <button type="button" class="red" onclick="deleteCurrentProfile()" data-i18n="prof.delete">Supprimer profil</button>
+    </div>
+    <div class="prof-stats-bar" id="profStatsBar"></div>
+    <div style="margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input type="search" id="profSysFilter" placeholder="Filtrer systèmes…" oninput="renderProfSystems()" style="max-width:220px">
+      <label style="font-size:12px;color:var(--text2)"><input type="checkbox" id="profOnlyMissing" onchange="renderProfSystems()"> Avec missing</label>
+      <span style="flex:1"></span>
+      <span id="profSelInfo" style="font-size:12px;color:var(--text2)"></span>
+    </div>
+    <div style="overflow:auto;border:1px solid var(--border);border-radius:var(--radius);max-height:calc(100vh - 280px)">
+      <table class="prof-table">
+        <thead>
+          <tr>
+            <th style="width:36px"><input type="checkbox" id="profCheckAll" onchange="toggleProfCheckAll(this.checked)"></th>
+            <th data-i18n="prof.col_system">Système</th>
+            <th data-i18n="prof.col_path">Dossier</th>
+            <th data-i18n="prof.col_dat">DAT</th>
+            <th style="width:70px">Total</th>
+            <th style="width:60px">Good</th>
+            <th style="width:60px">Miss</th>
+            <th style="width:60px">Bad</th>
+            <th style="width:70px">Fix</th>
+            <th style="width:120px">Scan</th>
+            <th style="width:160px"></th>
+          </tr>
+        </thead>
+        <tbody id="profSysBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal nouveau profil -->
+<div class="modal-bg" id="profModal">
+  <div class="modal" style="width:520px">
+    <div class="modal-header">
+      <h3 data-i18n="prof.new_title">Nouveau profil</h3>
+      <button type="button" onclick="closeProfModal()">✕</button>
+    </div>
+    <div class="prof-form" style="padding:16px">
+      <label data-i18n="prof.name">Nom</label>
+      <input type="text" id="profName" placeholder="RetroBat PC salon">
+      <label data-i18n="prof.type">Type</label>
+      <select id="profType">
+        <option value="retrobat">RetroBat</option>
+        <option value="batocera">Batocera</option>
+        <option value="recalbox">Recalbox</option>
+        <option value="custom">Personnalisé</option>
+      </select>
+      <label data-i18n="prof.root">Racine installation</label>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input type="text" id="profRoot" placeholder="D:\RetroBat" style="flex:1;margin:0">
+        <button type="button" onclick="browseProfRoot()">Parcourir…</button>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <input type="checkbox" id="profDetect" checked>
+        <span data-i18n="prof.detect">Détecter les systèmes (es_systems.cfg) et suggérer les DAT</span>
+      </label>
+      <div id="profCreateStatus" style="font-size:12px;color:var(--text2);min-height:18px"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" onclick="closeProfModal()" data-i18n="browser.cancel">Annuler</button>
+      <button type="button" class="primary" onclick="createProfile()" data-i18n="prof.create">Créer</button>
+    </div>
+  </div>
+</div>
+
+<div class="summary" id="summary">
+  <span class="pill total active" data-f="all" onclick="setStatusFilter(this)">Tous <b id="c-total">0</b></span>
+  <span class="pill good" data-f="good" onclick="setStatusFilter(this)">Good <b id="c-good">0</b></span>
+  <span class="pill rename" data-f="rename" onclick="setStatusFilter(this)">Rename <b id="c-rename">0</b></span>
+  <span class="pill bad" data-f="bad" onclick="setStatusFilter(this)">Bad <b id="c-bad">0</b></span>
+  <span class="pill missing" data-f="missing" onclick="setStatusFilter(this)">Missing <b id="c-missing">0</b></span>
+  <span class="pill" id="chip-incomplete" data-f="incomplete" onclick="setStatusFilter(this)" style="display:none;border-color:#9e6a03;color:#e3b341">Incomplete <b id="c-incomplete">0</b></span>
+  <span class="pill" id="chip-error" data-f="error" onclick="setStatusFilter(this)" style="display:none;border-color:var(--red);color:var(--red)">Error <b id="c-error">0</b></span>
+  <span class="status-text" id="statusText" data-i18n="status.ready">Chargez un DAT puis scannez un dossier</span>
+</div>
+
+<div class="toolbar">
+  <input id="search" type="search" placeholder="Recherche globale…" data-i18n-placeholder="filter.search">
+  <button type="button" onclick="clearFilters()" data-i18n="filter.clear">Effacer filtres</button>
+  <div class="spacer"></div>
+  <button type="button" class="amber" id="btnRename" data-i18n="action.repair" onclick="actRepair()" disabled>🔧 Réparer sélection</button>
+  <button type="button" class="red" id="btnDelete" data-i18n="action.delete" onclick="actDelete()" disabled>🗑️ Supprimer sélection</button>
+  <button type="button" onclick="actRepairAll()" data-i18n="action.repair_all">🔧 Réparer tous les Rename</button>
+  <button type="button" class="red" onclick="actDeleteBads()" data-i18n="action.delete_bads">🗑️ Supprimer tous les Bad</button>
+</div>
+
+<div class="main">
+  <div class="table-wrap">
+    <table class="results" id="resultsTable">
+      <thead>
+        <tr>
+          <th class="col-check">
+            <div class="th-inner" style="justify-content:center;padding:8px 4px">
+              <input type="checkbox" id="checkAll" title="Tout sélectionner (lignes visibles)" onclick="toggleCheckAll(event)">
+            </div>
+          </th>
+          <th class="col-status" data-col="status">
+            <div class="th-inner" onclick="onHeaderClick(event,'status')"><span>État</span><span class="sort-ico"></span><span class="filter-ico">▾</span></div>
+            <input class="col-filter" data-col="status" placeholder="Filtrer…" data-i18n-placeholder="filter.col" oninput="onColFilter()" onclick="event.stopPropagation()">
+          </th>
+          <th class="col-expected" data-col="expected">
+            <div class="th-inner" onclick="onHeaderClick(event,'expected')"><span>Nom attendu</span><span class="sort-ico"></span><span class="filter-ico">▾</span></div>
+            <input class="col-filter" data-col="expected" placeholder="Filtrer…" data-i18n-placeholder="filter.col" oninput="onColFilter()" onclick="event.stopPropagation()">
+          </th>
+          <th class="col-desc" data-col="description">
+            <div class="th-inner" onclick="onHeaderClick(event,'description')"><span>Nom complet</span><span class="sort-ico"></span><span class="filter-ico">▾</span></div>
+            <input class="col-filter" data-col="description" placeholder="Filtrer…" data-i18n-placeholder="filter.col" oninput="onColFilter()" onclick="event.stopPropagation()">
+          </th>
+          <th class="col-parent arcade-only" data-col="parent">
+            <div class="th-inner" onclick="onHeaderClick(event,'parent')"><span>Parent / Clone</span><span class="sort-ico"></span><span class="filter-ico">▾</span></div>
+            <input class="col-filter" data-col="parent" placeholder="Filtrer…" data-i18n-placeholder="filter.col" oninput="onColFilter()" onclick="event.stopPropagation()">
+          </th>
+          <th class="col-mtype arcade-only" data-col="mtype">
+            <div class="th-inner" onclick="onHeaderClick(event,'mtype')"><span>Type</span><span class="sort-ico"></span><span class="filter-ico">▾</span></div>
+            <input class="col-filter" data-col="mtype" placeholder="Filtrer…" data-i18n-placeholder="filter.col" oninput="onColFilter()" onclick="event.stopPropagation()">
+          </th>
+          <th class="col-bios arcade-only" data-col="bios">
+            <div class="th-inner" onclick="onHeaderClick(event,'bios')"><span>BIOS</span><span class="sort-ico"></span><span class="filter-ico">▾</span></div>
+            <input class="col-filter" data-col="bios" placeholder="Filtrer…" data-i18n-placeholder="filter.col" oninput="onColFilter()" onclick="event.stopPropagation()">
+          </th>
+          <th class="col-drv arcade-only" data-col="driver_status">
+            <div class="th-inner" onclick="onHeaderClick(event,'driver_status')"><span>Status</span><span class="sort-ico"></span><span class="filter-ico">▾</span></div>
+            <input class="col-filter" data-col="driver_status" placeholder="Filtrer…" data-i18n-placeholder="filter.col" oninput="onColFilter()" onclick="event.stopPropagation()">
+          </th>
+          <th class="col-zip" data-col="zip">
+            <div class="th-inner" onclick="onHeaderClick(event,'zip')"><span>ZIP / Fichier</span><span class="sort-ico"></span><span class="filter-ico">▾</span></div>
+            <input class="col-filter" data-col="zip" placeholder="Filtrer…" data-i18n-placeholder="filter.col" oninput="onColFilter()" onclick="event.stopPropagation()">
+          </th>
+          <th class="col-rom" data-col="rom">
+            <div class="th-inner" onclick="onHeaderClick(event,'rom')"><span>ROM (membre)</span><span class="sort-ico"></span><span class="filter-ico">▾</span></div>
+            <input class="col-filter" data-col="rom" placeholder="Filtrer…" data-i18n-placeholder="filter.col" oninput="onColFilter()" onclick="event.stopPropagation()">
+          </th>
+          <th class="col-size" data-col="size">
+            <div class="th-inner" onclick="onHeaderClick(event,'size')"><span>Taille</span><span class="sort-ico"></span><span class="filter-ico">▾</span></div>
+            <input class="col-filter" data-col="size" placeholder="Filtrer…" data-i18n-placeholder="filter.col" oninput="onColFilter()" onclick="event.stopPropagation()">
+          </th>
+          <th class="col-crc" data-col="hash" id="thHash">
+            <div class="th-inner" onclick="onHeaderClick(event,'hash')"><span id="thHashLabel">CRC32</span><span class="sort-ico"></span><span class="filter-ico">▾</span></div>
+            <input class="col-filter" data-col="hash" placeholder="Filtrer…" data-i18n-placeholder="filter.col" oninput="onColFilter()" onclick="event.stopPropagation()">
+          </th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="actions-bar">
+  <span class="info" id="selInfo">Aucune sélection</span>
+  <span id="rowCount" style="font-size:12px;color:var(--text2)"></span>
+</div>
+
+<div class="modal-bg" id="browserModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="browserTitle">Parcourir</h3>
+      <button type="button" onclick="closeBrowser()">✕</button>
+    </div>
+    <div class="modal-path" id="browserPath">/</div>
+    <div class="drive-bar" id="driveBar"></div>
+    <div class="modal-list" id="browserList"></div>
+    <div class="modal-footer">
+      <button type="button" onclick="closeBrowser()" data-i18n="browser.cancel">Annuler</button>
+      <button type="button" class="primary" id="browserSelectBtn" onclick="selectBrowserPath()">Sélectionner ce dossier</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="datsModal">
+  <div class="modal" style="width:780px;max-height:92vh;display:flex;flex-direction:column">
+    <div class="modal-header">
+      <h3>Bases de données</h3>
+      <button type="button" onclick="closeDatsModal()">✕</button>
+    </div>
+    <div class="dats-tabs" style="display:flex;gap:0;border-bottom:1px solid var(--border);padding:0 12px">
+      <button type="button" class="dats-tab active" id="tab-catalog" onclick="switchDatsTab('catalog')" data-i18n="dats.tab_catalog">Catalogue</button>
+      <button type="button" class="dats-tab" id="tab-mamegen" onclick="switchDatsTab('mamegen')" data-i18n="dats.tab_mamegen">Générer MAME</button>
+      <button type="button" class="dats-tab" id="tab-fbneover" onclick="switchDatsTab('fbneover')" data-i18n="dats.tab_fbneo">Versions FBNeo</button>
+    </div>
+    <div id="datsPanelCatalog">
+      <div style="padding:10px 16px;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border);flex-wrap:wrap">
+        <button type="button" id="pack-nointro" class="primary" onclick="setPack('nointro')">No-Intro</button>
+        <button type="button" id="pack-redump" onclick="setPack('redump')">Redump</button>
+        <button type="button" id="pack-mameredump" onclick="setPack('mameredump')">MAMERedump</button>
+        <button type="button" id="pack-mame" onclick="setPack('mame')">MAME</button>
+        <button type="button" id="pack-fbneo" onclick="setPack('fbneo')">FBNeo</button>
+        <input id="datsSearch" type="search" placeholder="Filtrer…" data-i18n-placeholder="filter.col" style="flex:1;min-width:120px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:6px 10px;font-size:13px">
+        <button type="button" class="primary" onclick="downloadPack()">Tout télécharger</button>
+      </div>
+      <div class="modal-path" id="datsStatus">Chargement du catalogue…</div>
+      <div class="modal-list" id="datsList"></div>
+    </div>
+    <div id="datsPanelFbneo" style="display:none;flex-direction:column;min-height:0;flex:1;overflow:hidden">
+      <div style="padding:14px 16px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:12px">
+        <div class="mame-section">
+          <div class="mame-sec-title">Versions / builds FBNeo</div>
+          <p style="font-size:12px;color:var(--text2);margin:0 0 8px;line-height:1.45">
+            Les DAT FBNeo suivent des <b>dates de build</b> (pas un numéro type MAME 0.xxx).
+            Les labels indiquent la version RetroBat / Batocera / Recalbox qui a adopté ce build.
+          </p>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+            <label class="mame-label">Build</label>
+            <select id="fbneoVersionSelect" class="mame-input" style="flex:1;min-width:260px">
+              <option value="">Chargement…</option>
+            </select>
+            <button type="button" onclick="loadFbneoVersions(true)" title="Recharger">↻</button>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" class="primary" onclick="downloadFbneoVersion()">Télécharger les DAT</button>
+            <button type="button" onclick="switchDatsTab('catalog');setPack('fbneo')">Voir catalogue local</button>
+          </div>
+          <div id="fbneoVerStatus" style="font-size:12px;color:var(--text2);margin-top:8px"></div>
+        </div>
+        <div class="mame-section">
+          <div class="mame-sec-title">Historique (correspondances)</div>
+          <div id="fbneoVerHistory" style="font-size:12px;max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg)"></div>
+        </div>
+      </div>
+    </div>
+    <div id="datsPanelMamegen" style="display:none;flex-direction:column;min-height:0;flex:1;overflow:hidden">
+      <div style="padding:12px 16px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:14px">
+
+        <div class="mame-section">
+          <div class="mame-sec-title">1. Source listxml</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+            <label class="mame-label">Version MAME</label>
+            <select id="mameVersionSelect" class="mame-input" style="flex:1;min-width:180px">
+              <option value="">Chargement…</option>
+            </select>
+            <button type="button" class="primary" onclick="generateMameXml()">Télécharger listxml</button>
+            <button type="button" onclick="loadMameVersions(true)" title="Recharger">↻</button>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+            <label class="mame-label">MAME local</label>
+            <input id="mameExePath" class="mame-input" type="text" placeholder="C:\mame\mame.exe" style="flex:1">
+            <button type="button" onclick="openBrowser('exe')">Parcourir…</button>
+            <button type="button" onclick="generateMameXmlLocal()">-listxml</button>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <label class="mame-label">Fichier XML</label>
+            <input id="mameSourceXml" class="mame-input" type="text" placeholder="dat\mame\mame0289.xml" style="flex:1">
+            <button type="button" onclick="openBrowser('xml')">Parcourir…</button>
+            <button type="button" onclick="analyzeMameSource()">Analyser</button>
+          </div>
+          <div id="mameSourceStats" style="font-size:12px;color:var(--text2);margin-top:6px;line-height:1.4">—</div>
+        </div>
+
+        <div class="mame-section">
+          <div class="mame-sec-title">2. Contenu à inclure <span style="font-weight:400;color:var(--text2);font-size:12px">(romset non-merged uniquement)</span></div>
+          <p style="margin:0 0 8px;font-size:12px;color:var(--text2);line-height:1.4">
+            Chaque machine = un <code>.zip</code> autonome. Les clones ont leurs propres ROMs (pas de merge parent).
+            Les BIOS restent des sets séparés (<code>neogeo.zip</code>, etc.).
+          </p>
+          <div class="mame-checks">
+            <label><input type="checkbox" id="optParentsOnly"> Parents uniquement (exclure les clones)</label>
+            <label><input type="checkbox" id="optIncludeClones" checked> Inclure les clones (zip complets non-merged)</label>
+            <label><input type="checkbox" id="optIncludeBios" checked> Inclure les sets BIOS (zip séparés)</label>
+            <label><input type="checkbox" id="optAutoBios" checked> Ajouter auto les BIOS requis par les jeux gardés</label>
+            <label><input type="checkbox" id="optIncludeDevices"> Inclure les devices</label>
+            <label><input type="checkbox" id="optIncludeMech"> Inclure les mécaniques</label>
+            <label><input type="checkbox" id="optRunnableOnly"> Runnable uniquement</label>
+            <label><input type="checkbox" id="optRequireRoms" checked> Avec ROMs ou CHD uniquement</label>
+          </div>
+        </div>
+
+        <div class="mame-section">
+          <div class="mame-sec-title">3. Filtres</div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px">
+            <div style="flex:1;min-width:160px">
+              <div class="mame-label" style="margin-bottom:4px">Status driver</div>
+              <label class="mame-check-inline"><input type="checkbox" id="stGood" checked> good</label>
+              <label class="mame-check-inline"><input type="checkbox" id="stImperfect" checked> imperfect</label>
+              <label class="mame-check-inline"><input type="checkbox" id="stPreliminary" checked> preliminary</label>
+            </div>
+            <div style="flex:1;min-width:140px">
+              <div class="mame-label" style="margin-bottom:4px">Année</div>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input id="optYearFrom" class="mame-input" type="text" placeholder="1975" style="width:70px">
+                <span style="color:var(--text2)">→</span>
+                <input id="optYearTo" class="mame-input" type="text" placeholder="2026" style="width:70px">
+              </div>
+            </div>
+            <div style="flex:1;min-width:160px">
+              <div class="mame-label" style="margin-bottom:4px">Fabricant</div>
+              <input id="optManufacturer" class="mame-input" type="text" placeholder="Capcom, Sega…" style="width:100%">
+            </div>
+          </div>
+          <div class="mame-label" style="margin-bottom:4px">BIOS / système (ex. Neo-Geo) — Ctrl+clic pour multi</div>
+          <select id="optBiosFilter" class="mame-input" multiple size="6" style="width:100%;min-height:110px">
+            <option value="">(analyser un XML pour la liste)</option>
+          </select>
+          <div style="font-size:11px;color:var(--text2);margin-top:4px">
+            Raccourcis :
+            <button type="button" class="linkish" onclick="selectBiosPreset(['neogeo'])">Neo-Geo</button> ·
+            <button type="button" class="linkish" onclick="selectBiosPreset(['cps1','cps2','cps3','qsound'])">CPS</button> ·
+            <button type="button" class="linkish" onclick="selectBiosPreset(['pgm'])">PGM</button> ·
+            <button type="button" class="linkish" onclick="selectBiosPreset(['naomi','naomi2','naomigd'])">Naomi</button> ·
+            <button type="button" class="linkish" onclick="document.getElementById('optBiosFilter').selectedIndex=-1">Aucun</button>
+          </div>
+        </div>
+
+        <div class="mame-section">
+          <div class="mame-sec-title">4. Catégories (Progetto-SNAPS)</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+            <button type="button" onclick="loadMameCategories(true)">Charger / actualiser catlist</button>
+            <span id="catLoadStatus" style="font-size:11px;color:var(--text2)">genre.ini + catlist.ini</span>
+          </div>
+
+          <div class="mame-label" style="margin-bottom:6px">Exclusions actives (cliquer × pour retirer)</div>
+          <div id="catExcludeTags" class="cat-tags"></div>
+
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 8px">
+            <input id="catAddInput" class="mame-input" type="text" list="catSuggestions" placeholder="Ajouter une exclusion (ex. Mahjong)" style="flex:1;min-width:180px">
+            <datalist id="catSuggestions"></datalist>
+            <button type="button" class="primary" onclick="addCategoryExclusion()">Ajouter</button>
+          </div>
+
+          <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Presets :</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+            <button type="button" onclick="presetCatExclude(['Mahjong'])">Mahjong</button>
+            <button type="button" onclick="presetCatExclude(['Casino','Gambling','Slot'])">Casino / Gambling</button>
+            <button type="button" onclick="presetCatExclude(['Mature'])">Mature</button>
+            <button type="button" onclick="presetCatExclude(['Mahjong','Casino','Gambling','Slot','Mature'])">Mahjong + Casino + Mature</button>
+            <button type="button" onclick="presetCatExclude(['Quiz'])">Quiz</button>
+            <button type="button" onclick="presetCatExclude(['Puzzle'])">Puzzle</button>
+            <button type="button" onclick="clearCategoryFilters()">Tout effacer</button>
+          </div>
+
+          <div class="mame-label" style="margin-bottom:4px">Mode</div>
+          <label class="mame-check-inline"><input type="radio" name="catMode" id="catModeExclude" value="exclude" checked> Exclure ces catégories</label>
+          <label class="mame-check-inline"><input type="radio" name="catMode" id="catModeInclude" value="include"> Inclure seulement celles-ci</label>
+
+          <!-- champs cachés pour compat API -->
+          <input type="hidden" id="optCatsExclude" value="">
+          <input type="hidden" id="optCatsInclude" value="">
+          <select id="optGenresExclude" multiple style="display:none"></select>
+          <select id="optGenresInclude" multiple style="display:none"></select>
+        </div>
+
+        <div class="mame-section">
+          <div class="mame-sec-title">5. Export</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <label class="mame-label">Nom fichier</label>
+            <input id="mameOutName" class="mame-input" type="text" placeholder="MAME_neogeo_filtered.xml" style="flex:1;min-width:180px">
+            <button type="button" class="primary" onclick="exportMameFiltered()">Exporter le XML filtré</button>
+          </div>
+        </div>
+
+        <div class="modal-path" id="mameGenStatus" style="margin:0">—</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" onclick="loadLocalDats()">DAT locaux</button>
+      <button type="button" onclick="closeDatsModal()">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="confirmModal">
+  <div class="modal modal-danger" style="width:420px">
+    <div class="modal-header">
+      <h3 id="confirmTitle">⚠ Confirmation</h3>
+      <button type="button" onclick="closeConfirm(false)">✕</button>
+    </div>
+    <div class="warn-body" id="confirmBody"></div>
+    <div class="modal-footer">
+      <button type="button" onclick="closeConfirm(false)" data-i18n="confirm.cancel">Annuler</button>
+      <button type="button" class="danger" id="confirmOkBtn" data-i18n="confirm.delete" onclick="closeConfirm(true)">Supprimer</button>
+    </div>
+  </div>
+</div>
+
+
+
+<div class="modal-bg" id="toolsModal">
+  <div class="modal" style="width:560px;max-height:90vh">
+    <div class="modal-header">
+      <h3 data-i18n="tools.title">🛠 Outils</h3>
+      <button type="button" class="icon-btn" onclick="closeToolsModal()">✕</button>
+    </div>
+    <div style="padding:16px;display:flex;flex-direction:column;gap:14px;overflow-y:auto">
+
+      <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:var(--bg)">
+        <div style="font-weight:600;margin-bottom:6px" data-i18n="tools.dats_title">📚 Bases DAT</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.4" data-i18n="tools.dats_desc">
+          Télécharger et organiser les DAT No-Intro, Redump, MAME, FBNeo… Générer un listxml MAME filtré.
+        </div>
+        <button type="button" class="primary" onclick="closeToolsModal();openDatsModal()" data-i18n="header.dats">Bases DAT…</button>
+      </div>
+
+      <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:var(--bg)">
+        <div style="font-weight:600;margin-bottom:6px" data-i18n="tools.rezip_title">📦 Recompression ZIP max</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.4" data-i18n="tools.rezip_desc">
+          Recompresse les archives .zip en DEFLATE niveau 9 (équivalent 7-Zip -mx=9), sans logiciel externe. Compatible MAME / FBNeo / émulateurs.
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <label style="font-size:12px;color:var(--text2);white-space:nowrap" data-i18n="tools.folder">Dossier</label>
+          <input id="toolsRezipPath" type="text" style="flex:1" placeholder="Dossier des ROMs">
+          <button type="button" onclick="openBrowser('tools_rezip')" data-i18n="header.browse">Parcourir…</button>
+        </div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:12px">
+          <label class="subdir-opt">
+            <input type="checkbox" id="toolsRezipSubdirs">
+            <span data-i18n="tools.subdirs">Sous-dossiers</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px">
+            <span data-i18n="tools.level">Niveau</span>
+            <select id="toolsRezipLevel">
+              <option value="9" selected>9 (max)</option>
+              <option value="6">6</option>
+              <option value="1">1 (rapide)</option>
+            </select>
+          </label>
+        </div>
+        <button type="button" class="primary" onclick="runRezip()" data-i18n="tools.rezip_run">📦 Recompresser les ZIP</button>
+      </div>
+
+      <div id="toolsOptionsSection" style="border:1px solid var(--border);border-radius:8px;padding:12px;background:var(--bg)">
+        <div style="font-weight:600;margin-bottom:6px" data-i18n="options.title">⚙ Options</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:8px" data-i18n="options.language">Langue</div>
+        <div id="langButtons" style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" id="lang-fr" onclick="setLanguage('fr')">Français</button>
+          <button type="button" id="lang-en" onclick="setLanguage('en')">English</button>
+          <button type="button" id="lang-es" onclick="setLanguage('es')">Español</button>
+          <button type="button" id="lang-de" onclick="setLanguage('de')">Deutsch</button>
+          <button type="button" id="lang-it" onclick="setLanguage('it')">Italiano</button>
+          <button type="button" id="lang-pt" onclick="setLanguage('pt')">Português</button>
+          <button type="button" id="lang-nl" onclick="setLanguage('nl')">Nederlands</button>
+          <button type="button" id="lang-pl" onclick="setLanguage('pl')">Polski</button>
+          <button type="button" id="lang-tr" onclick="setLanguage('tr')">Türkçe</button>
+          <button type="button" id="lang-sv" onclick="setLanguage('sv')">Svenska</button>
+          <button type="button" id="lang-no" onclick="setLanguage('no')">Norsk</button>
+          <button type="button" id="lang-da" onclick="setLanguage('da')">Dansk</button>
+          <button type="button" id="lang-ru" onclick="setLanguage('ru')">Русский</button>
+        </div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="primary" onclick="closeToolsModal()" data-i18n="btn.close">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="detailModal">
+  <div class="modal" style="width:720px;max-height:88vh">
+    <div class="modal-header">
+      <h3 id="detailTitle">Détail ROM</h3>
+      <button type="button" onclick="closeDetail()">✕</button>
+    </div>
+    <div id="detailMeta" style="padding:10px 16px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border);line-height:1.5"></div>
+    <div class="modal-list" id="detailList" style="max-height:55vh"></div>
+    <div class="modal-footer" style="gap:8px">
+      <button type="button" class="amber" id="detailRenameBtn" style="display:none" onclick="repairFromDetail()">🔧 <span data-i18n="detail.repair">Réparer</span></button>
+      <button type="button" class="primary" onclick="closeDetail()" data-i18n="detail.close">Fermer</button>
+    </div>
+  </div>
+</div>
+<div class="modal-bg" id="reportModal">
+  <div class="modal modal-report">
+    <div class="modal-header">
+      <h3 id="reportTitle">Compte rendu</h3>
+      <button type="button" onclick="closeReport()">✕</button>
+    </div>
+    <div class="report-body" id="reportBody"></div>
+    <div class="modal-footer">
+      <button type="button" class="primary" onclick="closeReport()" data-i18n="report.ok">OK</button>
+    </div>
+  </div>
+</div>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text" id="loadingText">Traitement en cours…</div>
+  <div class="loading-sub" id="loadingSub"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+
+/* ===== I18n ===== */
+let I18N = {};
+const SUPPORTED_LANGS = ['fr','en','es','de','it','pt','nl','pl','tr','sv','no','da','ru'];
+let LANG = localStorage.getItem('rsv_lang') || (navigator.language || 'fr').slice(0, 2).toLowerCase();
+if (SUPPORTED_LANGS.indexOf(LANG) < 0) {
+  // nb/nn → no, pt-BR → pt
+  if (LANG === 'nb' || LANG === 'nn') LANG = 'no';
+  else LANG = 'fr';
+}
+
+function t(key, vars) {
+  let s = (I18N && I18N[key]) || key;
+  if (vars) {
+    for (const k in vars) {
+      s = s.replace(new RegExp('\\{' + k + '\\}', 'g'), String(vars[k]));
+    }
+  }
+  return s;
+}
+
+function applyI18n() {
+  document.querySelectorAll('[data-i18n]').forEach(function (el) {
+    const key = el.getAttribute('data-i18n');
+    if (!key || !I18N[key]) return;
+    // Pills handled by setPillText
+    if (el.classList && el.classList.contains('pill')) return;
+    if (el.children.length === 0) {
+      el.textContent = I18N[key];
+      return;
+    }
+    // Element with only text + optional icons: replace whole text if no critical child ids
+    if (el.tagName === 'BUTTON' || el.tagName === 'LABEL' || el.tagName === 'H3' || el.tagName === 'H1') {
+      el.textContent = I18N[key];
+    }
+  });
+  document.querySelectorAll('[data-i18n-html]').forEach(function (el) {
+    const key = el.getAttribute('data-i18n-html');
+    if (key && I18N[key]) el.innerHTML = I18N[key];
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(function (el) {
+    const key = el.getAttribute('data-i18n-placeholder');
+    if (key && I18N[key]) el.setAttribute('placeholder', I18N[key]);
+  });
+  document.querySelectorAll('[data-i18n-title]').forEach(function (el) {
+    const key = el.getAttribute('data-i18n-title');
+    if (key && I18N[key]) el.setAttribute('title', I18N[key]);
+  });
+
+  // Status labels map
+  if (typeof ST_LABEL !== 'undefined') {
+    ST_LABEL.good = t('st.good');
+    ST_LABEL.rename = t('st.rename');
+    ST_LABEL.bad = t('st.bad');
+    ST_LABEL.missing = t('st.missing');
+    ST_LABEL.incomplete = t('st.incomplete');
+    ST_LABEL.error = t('st.error');
+    ST_LABEL.deleted = t('st.deleted');
+  }
+  if (typeof COMP_LABELS !== 'undefined') {
+    COMP_LABELS.ok = t('comp.ok');
+    COMP_LABELS.rename = t('comp.rename');
+    COMP_LABELS.missing = t('comp.missing');
+    COMP_LABELS.bad_crc = t('comp.bad_crc');
+    COMP_LABELS.bad_size = t('comp.bad_size');
+    COMP_LABELS.nodump = t('comp.nodump');
+    COMP_LABELS.optional = t('comp.optional');
+    COMP_LABELS.extra = t('comp.extra');
+    COMP_LABELS.available = t('comp.available');
+    COMP_LABELS.bad = t('comp.bad');
+    COMP_LABELS.error = t('comp.error');
+    COMP_LABELS.good = t('comp.good');
+    COMP_LABELS.incomplete = t('comp.incomplete');
+  }
+
+  // Pills (keep <b> counters)
+  setPillText('all', t('pill.all'));
+  setPillText('good', t('pill.good'));
+  setPillText('rename', t('pill.rename'));
+  setPillText('bad', t('pill.bad'));
+  setPillText('missing', t('pill.missing'));
+  setPillText('incomplete', t('pill.incomplete'));
+  setPillText('error', t('pill.error'));
+
+  // Table headers
+  const thMap = {
+    status: 'col.status', expected: 'col.expected', description: 'col.fullname',
+    parent: 'col.parent', mtype: 'col.type', bios: 'col.bios',
+    driver_status: 'col.driver', zip: 'col.zip', rom: 'col.rom', size: 'col.size'
+  };
+  document.querySelectorAll('th[data-col]').forEach(function (th) {
+    const col = th.getAttribute('data-col');
+    const key = thMap[col];
+    if (!key) return;
+    const span = th.querySelector('.th-inner > span:first-child, .th-inner span:not(.sort-ico):not(.filter-ico)');
+    // structure varies - try first text span in th-inner
+    const inner = th.querySelector('.th-inner');
+    if (inner && inner.childNodes.length) {
+      for (let i = 0; i < inner.childNodes.length; i++) {
+        const n = inner.childNodes[i];
+        if (n.nodeType === 1 && n.tagName === 'SPAN' && !n.classList.contains('sort-ico') && !n.classList.contains('filter-ico')) {
+          n.textContent = t(key);
+          break;
+        }
+      }
+    }
+  });
+  const hashLbl = document.getElementById('thHashLabel');
+  if (hashLbl) hashLbl.textContent = t('col.hash');
+
+  // Lang buttons state
+  document.querySelectorAll('[id^="lang-"]').forEach(function (b) {
+    b.classList.toggle('lang-active', b.id === 'lang-' + LANG);
+  });
+
+  // selection info if empty
+  const sel = document.getElementById('selInfo');
+  if (sel && (!SELECTED || SELECTED.size === 0)) sel.textContent = t('action.none_selected');
+
+  // cat-tags empty state is CSS - update via style if needed
+  document.documentElement.lang = LANG;
+}
+
+function setPillText(filter, label) {
+  const el = document.querySelector('.summary .pill[data-f="' + filter + '"]');
+  if (!el) return;
+  const b = el.querySelector('b');
+  // rebuild text around b
+  const val = b ? b.textContent : '0';
+  el.innerHTML = label + ' <b id="' + (b ? b.id : '') + '">' + val + '</b>';
+}
+
+async function loadI18n(lang) {
+  lang = lang || LANG || 'fr';
+  try {
+    const data = await api('/api/i18n/' + encodeURIComponent(lang));
+    if (data.error) throw new Error(data.error);
+    I18N = data.strings || {};
+    LANG = data.lang || lang;
+    localStorage.setItem('rsv_lang', LANG);
+    applyI18n();
+    if (typeof INDEXED !== 'undefined' && INDEXED.length) {
+      // refresh status labels in index
+      rebuildIndex();
+      renderTable();
+    }
+  } catch (e) {
+    console.warn('i18n load failed', e);
+  }
+}
+
+const LANG_LABELS = {
+  fr: 'Français', en: 'English', es: 'Español', de: 'Deutsch', it: 'Italiano',
+  pt: 'Português', nl: 'Nederlands', pl: 'Polski', tr: 'Türkçe', sv: 'Svenska',
+  no: 'Norsk', da: 'Dansk', ru: 'Русский'
+};
+
+function setLanguage(lang) {
+  loadI18n(lang).then(function () {
+    toast(t('toast.lang_changed', { lang: LANG_LABELS[LANG] || LANG }));
+  });
+}
+
+function openToolsModal() {
+  const m = document.getElementById('toolsModal');
+  if (!m) return;
+  const inp = document.getElementById('toolsRezipPath');
+  const roms = document.getElementById('romsPath');
+  if (inp && roms && !(inp.value || '').trim()) inp.value = roms.value || '';
+  document.querySelectorAll('[id^="lang-"]').forEach(function (b) {
+    b.classList.toggle('lang-active', b.id === 'lang-' + LANG);
+  });
+  m.classList.add('open');
+}
+function closeToolsModal() {
+  const m = document.getElementById('toolsModal');
+  if (m) m.classList.remove('open');
+}
+
+async function runRezip() {
+  const path = (document.getElementById('toolsRezipPath').value || '').trim();
+  if (!path) {
+    toast('Indiquez un dossier', false);
+    return;
+  }
+  const sub = document.getElementById('toolsRezipSubdirs');
+  const max_depth = (sub && sub.checked) ? 2 : 0;
+  const levelEl = document.getElementById('toolsRezipLevel');
+  const compresslevel = levelEl ? parseInt(levelEl.value || '9', 10) : 9;
+  if (!confirm('Recompresser tous les .zip de\n' + path + '\n\nLes fichiers seront réécrits. Continuer ?')) return;
+
+  showLoading('Recompression ZIP…', 'Listage de ' + path);
+
+  let files = [];
+  let folderUsed = path;
+  try {
+    const listing = await api('/api/tools/rezip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: path, max_depth: max_depth, list_only: true })
+    });
+    if (listing.error) {
+      hideLoading();
+      toast(listing.error, false);
+      return;
+    }
+    files = listing.files || [];
+    folderUsed = listing.resolved_path || listing.folder || path;
+    if (!files.length) {
+      hideLoading();
+      const sample = (listing.sample_entries || []).slice(0, 15).join(', ');
+      const msg = 'Aucun .zip dans :\n' + folderUsed +
+        (sample ? ('\n\nContenu vu par le serveur :\n' + sample) : '\n\n(dossier vide ou inaccessible)');
+      alert(msg);
+      toast('Aucun fichier .zip trouvé', false);
+      return;
+    }
+  } catch (e) {
+    hideLoading();
+    toast(String(e), false);
+    return;
+  }
+
+  const total = files.length;
+  let ok = 0, fail = 0, savedTot = 0;
+  const reportItems = [];
+
+  try {
+    for (let i = 0; i < total; i++) {
+      const fp = files[i];
+      const name = String(fp).split(/[/\\]/).pop();
+      const subEl = document.getElementById('loadingSub');
+      if (subEl) subEl.textContent = (i + 1) + ' / ' + total + ' — ' + name;
+      const data = await api('/api/tools/rezip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files: [fp], compresslevel: compresslevel })
+      });
+      if (data.error) {
+        fail++;
+        reportItems.push({ ok: false, from: name, error: data.error });
+        continue;
+      }
+      ok += data.recompressed || 0;
+      fail += data.failed || 0;
+      savedTot += data.saved || 0;
+      for (const it of (data.items || [])) {
+        if (it.ok) {
+          reportItems.push({
+            ok: true,
+            action: 'Rezip',
+            from: it.name || name,
+            to: formatSize(it.size_before) + ' → ' + formatSize(it.size_after) +
+              ((it.saved > 0) ? (' (−' + formatSize(it.saved) + ')') : '')
+          });
+        } else {
+          reportItems.push({ ok: false, from: it.name || name, error: it.error || 'Échec' });
+        }
+      }
+    }
+  } catch (e) {
+    toast(String(e), false);
+  } finally {
+    hideLoading();
+  }
+
+  let shown = reportItems;
+  if (reportItems.length > 300) {
+    shown = reportItems.filter(function (x) { return !x.ok; })
+      .concat(reportItems.filter(function (x) { return x.ok; }).slice(0, 80));
+  }
+  showReport('Compte rendu — Recompression ZIP', reportHtml([
+    { label: 'Dossier', value: folderUsed },
+    { label: 'Total', value: total },
+    { label: 'OK', value: ok, cls: 'ok' },
+    { label: 'Échecs', value: fail, cls: fail ? 'fail' : '' },
+    { label: 'Économisé', value: formatSize(Math.max(0, savedTot)), cls: savedTot > 0 ? 'ok' : '' },
+  ], shown));
+  toast(total + ' ZIP : ' + ok + ' OK' + (fail ? (', ' + fail + ' échec(s)') : ''), !fail);
+}
+
+
+function openOptions() {
+  openToolsModal();
+  const sec = document.getElementById('toolsOptionsSection');
+  if (sec) setTimeout(function () { sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }, 50);
+}
+function closeOptions() {
+  closeToolsModal();
+}
+
+let RESULTS = [];
+let DETAIL_IDX = -1;
+let HASH_MODE = 'crc'; // 'crc' | 'sha1'
+let DAT_MODE = 'standard'; // 'standard' | 'arcade'
+let SELECTED = new Set(); // indices cochés
+let STATUS_FILTER = 'all';
+let SORT = { col: 'expected', dir: 'asc' };
+let COL_FILTERS = { status: '', zip: '', rom: '', expected: '', description: '', size: '', hash: '', parent: '', mtype: '', bios: '', driver_status: '' };
+let FILTER_OPEN = null;
+
+const ST_LABEL = {
+  good: 'Good', rename: 'Rename', bad: 'Bad',
+  missing: 'Missing', error: 'Error', deleted: 'Deleted'
+};
+
+function toast(msg, ok = true) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + (ok ? 'ok' : 'err');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+
+function showLoading(msg, sub) {
+  document.getElementById('loadingText').textContent = msg || 'Traitement en cours…';
+  document.getElementById('loadingSub').textContent = sub || '';
+  document.getElementById('loadingOverlay').classList.add('open');
+  document.body.classList.add('loading-active');
+}
+function hideLoading() {
+  document.getElementById('loadingOverlay').classList.remove('open');
+  document.body.classList.remove('loading-active');
+}
+
+async function api(url, opts = {}) {
+  const r = await fetch(url, opts);
+  const ct = (r.headers.get('content-type') || '').toLowerCase();
+  if (!ct.includes('application/json')) {
+    const text = await r.text();
+    const preview = text.replace(/\s+/g, ' ').slice(0, 120);
+    throw new Error(
+      'API ' + url + ' a renvoyé du HTML/texte (HTTP ' + r.status + ') au lieu de JSON. ' +
+      'Relancez RomSet Verifier (fermez la fenêtre Lancer.bat puis rouvrez). ' +
+      'Aperçu : ' + preview
+    );
+  }
+  return r.json();
+}
+
+function esc(s) {
+  // Rapide (pas de DOM) — critique pour 10k+ lignes
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function escAttr(s) {
+  return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function splitFound(r) {
+  const found = r.found || '';
+  if (r.is_zip && found.includes(' → ')) {
+    const i = found.indexOf(' → ');
+    return { zip: found.slice(0, i), rom: found.slice(i + 3) };
+  }
+  if (r.is_zip) {
+    return { zip: found || (r.path ? r.path.split(/[/\\]/).pop() : ''), rom: r.zip_member || '' };
+  }
+  return { zip: '', rom: found };
+}
+
+function formatSize(n) {
+  if (!n) return '—';
+  if (n >= 1073741824) return (n / 1073741824).toFixed(2) + ' Go';
+  if (n >= 1048576) return (n / 1048576).toFixed(2) + ' Mo';
+  if (n >= 1024) return (n / 1024).toFixed(1) + ' Ko';
+  return n.toLocaleString() + ' o';
+}
+
+// Cache indexé reconstruit uniquement quand RESULTS change
+let INDEXED = [];
+let VIEW_ROWS = [];
+const ROW_H = 32;
+const OVERSCAN = 25;
+let _filterTimer = null;
+let _scrollTick = false;
+
+
+function applyRowPatches(rows) {
+  if (!rows || !rows.length) return;
+  for (let i = 0; i < rows.length; i++) {
+    const p = rows[i];
+    const idx = (p.index !== undefined) ? p.index : -1;
+    const row = p.row || p;
+    if (idx >= 0 && idx < RESULTS.length) {
+      // conserver components client si présents (détail)
+      const prev = RESULTS[idx] || {};
+      const comps = prev.components;
+      RESULTS[idx] = Object.assign({}, prev, row);
+      if (comps && !row.components) RESULTS[idx].components = comps;
+      else if (row.components === undefined && comps) RESULTS[idx].components = comps;
+    }
+  }
+  INDEXED = [];
+}
+
+function rebuildIndex() {
+  INDEXED = new Array(RESULTS.length);
+  for (let idx = 0; idx < RESULTS.length; idx++) {
+    const r = RESULTS[idx];
+    const { zip, rom } = splitFound(r);
+    const hash = HASH_MODE === 'sha1' ? (r.sha1 || '') : (r.crc || '');
+    let parentCol = '';
+    if (DAT_MODE === 'arcade') {
+      if (r.is_clone || r.cloneof) parentCol = 'clone of ' + (r.cloneof || r.parent || '');
+      else if (r.mtype === 'extra') parentCol = '';
+      else parentCol = 'parent';
+    }
+    const status = r.status || '';
+    const expected = r.expected || r.game || '';
+    const description = r.adb_title || r.description || '';
+    const bios = r.bios || '';
+    const mtype = r.mtype || '';
+    const driver_status = r.driver_status || '';
+    const message = r.message || '';
+    const size = r.size || 0;
+    const hashL = (hash || '').toLowerCase();
+    INDEXED[idx] = {
+      status, zip, rom, expected, size, hash: hashL,
+      parent: parentCol, mtype, bios, driver_status, description, message,
+      _idx: idx,
+      _sizeFmt: formatSize(size),
+      _statusLabel: ST_LABEL[status] || status,
+      _search: (zip + ' ' + rom + ' ' + expected + ' ' + description + ' ' + bios + ' ' + hashL + ' ' + (ST_LABEL[status] || status) + ' ' + parentCol + ' ' + mtype + ' ' + message).toLowerCase()
+    };
+  }
+}
+
+function getViewRows() {
+  let rows = INDEXED;
+  if (STATUS_FILTER !== 'all') {
+    const sf = STATUS_FILTER;
+    rows = rows.filter(r => r.status === sf);
+  }
+  for (const col in COL_FILTERS) {
+    const v = (COL_FILTERS[col] || '').trim().toLowerCase();
+    if (!v) continue;
+    if (col === 'size') {
+      rows = rows.filter(r => String(r.size).includes(v) || r._sizeFmt.toLowerCase().includes(v));
+    } else if (col === 'status') {
+      rows = rows.filter(r => r._statusLabel.toLowerCase().includes(v) || r.status.includes(v));
+    } else {
+      rows = rows.filter(r => String(r[col] || '').toLowerCase().includes(v));
+    }
+  }
+  const searchEl = document.getElementById('search');
+  const q = searchEl ? (searchEl.value || '').trim().toLowerCase() : '';
+  if (q) rows = rows.filter(r => r._search.includes(q));
+
+  const col = SORT.col;
+  const dir = SORT.dir === 'asc' ? 1 : -1;
+  // copie superficielle avant sort (ne pas muter INDEXED)
+  rows = rows.slice();
+  if (col === 'size') {
+    rows.sort((a, b) => (a.size - b.size) * dir);
+  } else if (col === 'status') {
+    const order = { good: 0, rename: 1, incomplete: 2, bad: 3, missing: 4, error: 5, deleted: 6 };
+    rows.sort((a, b) => ((order[a.status] ?? 9) - (order[b.status] ?? 9)) * dir);
+  } else {
+    rows.sort((a, b) => {
+      const va = String(a[col] || '').toLowerCase();
+      const vb = String(b[col] || '').toLowerCase();
+      if (va < vb) return -dir;
+      if (va > vb) return dir;
+      return 0;
+    });
+  }
+  return rows;
+}
+
+function rowHtml(r) {
+  const checked = SELECTED.has(r._idx) ? 'checked' : '';
+  const sel = SELECTED.has(r._idx) ? 'selected' : '';
+  const drv = r.driver_status || '';
+  const drvCls = drv ? ('drv-' + drv) : '';
+  return `<tr class="${sel}" onclick="openResultDetail(${r._idx})" style="cursor:pointer" title="Cliquer pour le détail">
+      <td class="col-check" onclick="event.stopPropagation()">
+        <input type="checkbox" ${checked} onchange="toggleCheck(${r._idx}, this.checked)">
+      </td>
+      <td><span class="st st-${esc(r.status)}">${esc(r._statusLabel)}</span></td>
+      <td title="${esc(r.expected)}">${esc(r.expected) || '—'}</td>
+      <td title="${esc(r.description)}">${esc(r.description) || '—'}</td>
+      <td class="arcade-only" title="${esc(r.parent)}">${esc(r.parent) || '—'}</td>
+      <td class="arcade-only">${esc(r.mtype) || '—'}</td>
+      <td class="arcade-only mono" title="${esc(r.bios)}">${esc(r.bios) || '—'}</td>
+      <td class="arcade-only"><span class="${drvCls}">${esc(drv) || '—'}</span></td>
+      <td title="${esc(r.zip)}">${esc(r.zip) || '—'}</td>
+      <td title="${esc(r.rom)}${r.message ? ' — ' + esc(r.message) : ''}">${esc(r.rom) || esc(r.message) || '—'}</td>
+      <td class="mono">${r._sizeFmt}</td>
+      <td class="mono" title="${esc(r.hash)}">${esc(r.hash) || '—'}</td>
+    </tr>`;
+}
+
+function renderVisible() {
+  const tbody = document.getElementById('tbody');
+  if (!tbody) return;
+  const wrap = document.querySelector('.table-wrap');
+  const total = VIEW_ROWS.length;
+  if (!total) {
+    tbody.innerHTML = '';
+    return;
+  }
+  if (!wrap) {
+    tbody.innerHTML = VIEW_ROWS.map(rowHtml).join('');
+    return;
+  }
+  const scrollTop = wrap.scrollTop;
+  const viewH = wrap.clientHeight || 600;
+  let start = Math.floor(scrollTop / ROW_H) - OVERSCAN;
+  if (start < 0) start = 0;
+  let end = Math.ceil((scrollTop + viewH) / ROW_H) + OVERSCAN;
+  if (end > total) end = total;
+  // Si peu de lignes, rendu complet (évite padding inutile)
+  if (total <= 200) {
+    tbody.innerHTML = VIEW_ROWS.map(rowHtml).join('');
+    return;
+  }
+  const topPad = start * ROW_H;
+  const botPad = (total - end) * ROW_H;
+  let html = '';
+  if (topPad > 0) html += `<tr class="vpad" aria-hidden="true"><td colspan="12" style="height:${topPad}px"></td></tr>`;
+  for (let i = start; i < end; i++) html += rowHtml(VIEW_ROWS[i]);
+  if (botPad > 0) html += `<tr class="vpad" aria-hidden="true"><td colspan="12" style="height:${botPad}px"></td></tr>`;
+  tbody.innerHTML = html;
+}
+
+function renderTable() {
+  if (INDEXED.length !== RESULTS.length) rebuildIndex();
+  VIEW_ROWS = getViewRows();
+  renderVisible();
+
+  const rc = document.getElementById('rowCount');
+  if (rc) rc.textContent = VIEW_ROWS.length + ' / ' + RESULTS.length + ' lignes';
+
+  const allBox = document.getElementById('checkAll');
+  if (allBox) {
+    const visIdx = VIEW_ROWS;
+    let nChecked = 0;
+    for (let i = 0; i < visIdx.length; i++) if (SELECTED.has(visIdx[i]._idx)) nChecked++;
+    allBox.checked = visIdx.length > 0 && nChecked === visIdx.length;
+    allBox.indeterminate = nChecked > 0 && nChecked < visIdx.length;
+  }
+
+  document.querySelectorAll('th[data-col]').forEach(th => {
+    th.classList.remove('sorted-asc', 'sorted-desc', 'filtered', 'filter-open');
+    const c = th.dataset.col;
+    if (SORT.col === c) th.classList.add(SORT.dir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+    if (COL_FILTERS[c]) th.classList.add('filtered');
+    if (FILTER_OPEN === c) th.classList.add('filter-open');
+  });
+
+  updateActionButtons();
+}
+
+function scheduleFilterRender() {
+  if (_filterTimer) clearTimeout(_filterTimer);
+  _filterTimer = setTimeout(() => {
+    _filterTimer = null;
+    renderTable();
+  }, 120);
+}
+
+function onHeaderClick(ev, col) {
+  if (ev.target.classList.contains('filter-ico')) {
+    FILTER_OPEN = FILTER_OPEN === col ? null : col;
+    renderTable();
+    if (FILTER_OPEN) {
+      const inp = document.querySelector('th[data-col="' + col + '"] .col-filter');
+      if (inp) setTimeout(() => inp.focus(), 0);
+    }
+    return;
+  }
+  if (SORT.col === col) {
+    SORT.dir = SORT.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    SORT.col = col;
+    SORT.dir = 'asc';
+  }
+  renderTable();
+}
+
+function onColFilter() {
+  document.querySelectorAll('input.col-filter').forEach(inp => {
+    COL_FILTERS[inp.dataset.col] = inp.value;
+  });
+  scheduleFilterRender();
+}
+
+function clearFilters() {
+  STATUS_FILTER = 'all';
+  COL_FILTERS = { status: '', zip: '', rom: '', expected: '', description: '', size: '', hash: '', parent: '', mtype: '', bios: '', driver_status: '' };
+  FILTER_OPEN = null;
+  document.getElementById('search').value = '';
+  document.querySelectorAll('.col-filter').forEach(inp => { inp.value = ''; });
+  document.querySelectorAll('.summary .pill').forEach(p => p.classList.remove('active'));
+  const all = document.querySelector('.summary .pill[data-f="all"]');
+  if (all) all.classList.add('active');
+  renderTable();
+}
+
+function setStatusFilter(el) {
+  document.querySelectorAll('.summary .pill').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  STATUS_FILTER = el.dataset.f;
+  renderTable();
+}
+
+
+function selectItem(idx, ev) {
+  if (SELECTED.has(idx)) SELECTED.delete(idx);
+  else SELECTED.add(idx);
+  renderTable();
+}
+
+function toggleCheck(idx, on) {
+  if (on) SELECTED.add(idx);
+  else SELECTED.delete(idx);
+  updateActionButtons();
+  renderTable();
+}
+
+function toggleCheckAll(ev) {
+  ev.stopPropagation();
+  const on = ev.target.checked;
+  const rows = getViewRows();
+  if (on) rows.forEach(r => SELECTED.add(r._idx));
+  else rows.forEach(r => SELECTED.delete(r._idx));
+  renderTable();
+}
+
+function updateActionButtons() {
+  const info = document.getElementById('selInfo');
+  const n = SELECTED.size;
+  const btnR = document.getElementById('btnRename');
+  const btnD = document.getElementById('btnDelete');
+  if (n === 0) {
+    if (info) info.textContent = t('action.none_selected');
+    if (btnR) btnR.disabled = true;
+    if (btnD) btnD.disabled = true;
+    return;
+  }
+  let nRename = 0, nDeletable = 0, nGood = 0;
+  for (const i of SELECTED) {
+    const r = RESULTS[i];
+    if (!r) continue;
+    if (typeof rowIsRepairable === 'function' ? rowIsRepairable(r) : r.status === 'rename') nRename++;
+    if (r.status === 'good') nGood++;
+    if (r.path) nDeletable++;
+  }
+  if (info) info.textContent = t('action.selected', { n: n, rename: nRename, files: nDeletable });
+  if (btnR) btnR.disabled = nRename === 0;
+  if (btnD) btnD.disabled = nDeletable === 0;
+}
+
+function updateSummary(c) {
+  if (!c) return;
+  function setTxt(id, v) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = v;
+  }
+  setTxt('c-total', c.total || 0);
+  setTxt('c-good', c.good || 0);
+  setTxt('c-rename', c.rename || 0);
+  setTxt('c-bad', c.bad || 0);
+  setTxt('c-missing', c.missing || 0);
+  setTxt('c-incomplete', c.incomplete || 0);
+  setTxt('c-error', c.error || 0);
+  const chipInc = document.getElementById('chip-incomplete');
+  if (chipInc) chipInc.style.display = ((c.incomplete || 0) > 0 || (typeof DAT_MODE !== 'undefined' && DAT_MODE === 'arcade')) ? '' : 'none';
+  const chipErr = document.getElementById('chip-error');
+  if (chipErr) chipErr.style.display = ((c.error || 0) > 0) ? '' : 'none';
+}
+
+function getScanMaxDepth() {
+  const on = document.getElementById('optSubdirs');
+  const depthEl = document.getElementById('optSubdirDepth');
+  if (!on || !on.checked) return 0;
+  const d = parseInt(depthEl && depthEl.value ? depthEl.value : '1', 10);
+  return (d === 2) ? 2 : 1;
+}
+
+function onSubdirsToggle() {
+  const on = document.getElementById('optSubdirs');
+  const depthEl = document.getElementById('optSubdirDepth');
+  if (depthEl) depthEl.disabled = !(on && on.checked);
+  saveSubdirsPrefs();
+}
+
+function saveSubdirsPrefs() {
+  try {
+    const cb = document.getElementById('optSubdirs');
+    const depthEl = document.getElementById('optSubdirDepth');
+    if (cb) localStorage.setItem('rsv_subdirs', cb.checked ? '1' : '0');
+    if (depthEl) localStorage.setItem('rsv_subdir_depth', depthEl.value || '1');
+  } catch (e) {}
+}
+
+function loadSubdirsPrefs() {
+  try {
+    const on = localStorage.getItem('rsv_subdirs') === '1';
+    const d = localStorage.getItem('rsv_subdir_depth') || '1';
+    const cb = document.getElementById('optSubdirs');
+    const depthEl = document.getElementById('optSubdirDepth');
+    if (cb) cb.checked = on;
+    if (depthEl) {
+      depthEl.value = (d === '2') ? '2' : '1';
+      depthEl.disabled = !on;
+    }
+  } catch (e) {}
+}
+
+async function loadDat() {
+  const path = (document.getElementById('datPath').value || '').trim();
+  if (!path) return toast(t('toast.need_dat'), false);
+  showLoading(t('status.loading'), path);
+  try {
+    const data = await api('/api/load_dat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    });
+    if (data.error) return toast(data.error, false);
+    const ctot = document.getElementById('c-total');
+    if (ctot) ctot.textContent = data.count;
+    HASH_MODE = data.hash_mode || 'crc';
+    DAT_MODE = data.dat_mode || 'standard';
+    document.body.classList.toggle('arcade-mode', DAT_MODE === 'arcade');
+    const btnAdb = document.getElementById('btnEnrichAdb');
+    if (btnAdb) btnAdb.style.display = DAT_MODE === 'arcade' ? '' : 'none';
+    const modeLabel = HASH_MODE === 'sha1' ? t('mode.sha1') : t('mode.crc');
+    const lbl = document.getElementById('thHashLabel');
+    if (lbl) lbl.textContent = modeLabel;
+    const modeTxt = DAT_MODE === 'arcade' ? t('mode.arcade') : modeLabel;
+    const st = document.getElementById('statusText');
+    if (st) st.textContent = (data.name || path) + ' — ' + data.count + ' ' +
+      (DAT_MODE === 'arcade' ? t('toast.machines') : t('toast.roms')) + ' — ' + modeTxt;
+    clearScanResults();
+    toast(t('toast.dat_loaded', {
+      n: data.count,
+      unit: DAT_MODE === 'arcade' ? t('toast.machines') : t('toast.roms'),
+      mode: modeTxt
+    }));
+  } catch (e) {
+    toast(String(e), false);
+  } finally {
+    hideLoading();
+  }
+}
+
+
+/** Vide complètement les résultats affichés (entre deux scans / changement de DAT). */
+function clearScanResults() {
+  RESULTS = [];
+  SELECTED = new Set();
+  INDEXED = [];
+  VIEW_ROWS = [];
+  const tbody = document.getElementById('tbody');
+  if (tbody) tbody.innerHTML = '';
+  const rc = document.getElementById('rowCount');
+  if (rc) rc.textContent = '0 / 0 lignes';
+  try {
+    updateSummary({ total: 0, good: 0, rename: 0, bad: 0, missing: 0, error: 0, incomplete: 0 });
+  } catch (e) {}
+  try { updateActionButtons(); } catch (e) {}
+}
+
+
+async function quitApp() {
+  const msg = t('quit.confirm') || 'Quitter RomSet Verifier ?\nLe serveur local sera arrêté.';
+  if (!confirm(msg)) return;
+  try {
+    // Ne pas attendre longtemps : le serveur coupe la connexion
+    await Promise.race([
+      api('/api/shutdown', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
+      new Promise(function (r) { setTimeout(r, 500); })
+    ]);
+  } catch (e) { /* connexion coupée = normal */ }
+  // Electron
+  try {
+    if (window.electronAPI && typeof window.electronAPI.quit === 'function') {
+      window.electronAPI.quit();
+      return;
+    }
+  } catch (e) {}
+  // Navigateur : tenter de fermer l'onglet
+  try {
+    window.open('', '_self');
+    window.close();
+  } catch (e) {}
+  // Fallback : page d'au revoir si le navigateur bloque window.close()
+  try {
+    document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0d1117;color:#e6edf3;font-family:system-ui;flex-direction:column;gap:12px">' +
+      '<div style="font-size:28px">🕹️</div>' +
+      '<div style="font-size:18px;font-weight:600">RomSet Verifier</div>' +
+      '<div style="color:#8b949e;font-size:14px">' + (t('quit.bye') || 'Serveur arrêté — vous pouvez fermer cet onglet.') + '</div>' +
+      '</div>';
+  } catch (e) {}
+}
+
+async function doScan() {
+  const path = (document.getElementById('romsPath').value || '').trim();
+  if (!path) return toast(t('toast.need_roms'), false);
+  const st = document.getElementById('statusText');
+  if (st) st.textContent = t('status.scanning');
+  const max_depth = getScanMaxDepth();
+  const sub = max_depth ? (path + '  ·  depth ' + max_depth) : path;
+  // Nettoyage immédiat : ne pas laisser l'ancien set visible pendant/après le scan
+  clearScanResults();
+  showLoading(t('loading.scan'), sub);
+  try {
+    const data = await api('/api/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: path, max_depth: max_depth })
+    });
+    if (data.error) {
+      if (st) st.textContent = data.error;
+      toast(data.error, false);
+      clearScanResults();
+      return;
+    }
+    RESULTS = Array.isArray(data.results) ? data.results : [];
+    SELECTED = new Set();
+    INDEXED = [];
+    rebuildIndex();
+    updateSummary(data.counts || { total: RESULTS.length });
+    renderTable();
+    if (data.max_depth_auto) {
+      toast((t('toast.scan_done', { n: RESULTS.length }) || ('Scan : ' + RESULTS.length)) +
+        ' · sous-dossiers auto (depth ' + (data.max_depth || 2) + ')');
+    } else {
+      toast(t('toast.scan_done', { n: RESULTS.length }));
+    }
+    const btnAdb = document.getElementById('btnEnrichAdb');
+    if (btnAdb) btnAdb.style.display = DAT_MODE === 'arcade' ? '' : 'none';
+    if (st) st.textContent = t('toast.scan_done', { n: RESULTS.length });
+  } catch (e) {
+    clearScanResults();
+    toast(t('toast.scan_error', { e: e }), false);
+  } finally {
+    hideLoading();
+  }
+}
+
+async function enrichAdb() {
+  if (DAT_MODE !== 'arcade') return toast(t('toast.adb_only_arcade'), false);
+  if (!RESULTS.length) return toast(t('toast.adb_need_scan'), false);
+  if (!confirm(t('toast.adb_confirm', { n: RESULTS.length }))) return;
+  showLoading(t('loading.adb'), t('loading.adb_sub'));
+  try {
+    const data = await api('/api/mame/enrich', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    if (data.error) { toast(data.error, false); return; }
+    if (data.rows) applyRowPatches(data.rows);
+    else if (data.rows) applyRowPatches(data.rows);
+    else if (data.results) RESULTS = data.results;
+    rebuildIndex();
+    if (data.counts) updateSummary(data.counts);
+    renderTable();
+    toast(t('toast.adb_done', { updated: data.updated, queried: data.queried, found: data.found }));
+  } catch (e) {
+    toast(t('toast.adb_error', { e: e }), false);
+  } finally {
+    hideLoading();
+  }
+}
+
+
+
+const COMP_LABELS = {
+  ok: 'OK',
+  rename: 'Mal nommé',
+  missing: 'Manquant',
+  bad_crc: 'Mauvais CRC',
+  bad_size: 'Mauvaise taille',
+  nodump: 'Nodump',
+  optional: 'Optionnel',
+  extra: 'Hors DAT',
+  available: 'Récupérable',
+  bad: 'Bad',
+  error: 'Erreur',
+  good: 'OK',
+  incomplete: 'Incomplet',
+};
+
+function closeDetail() {
+  const m = document.getElementById('detailModal');
+  if (m) m.classList.remove('open');
+}
+
+function rowNeedsRename(r) {
+  if (!r) return false;
+  if (r.status === 'rename') return true;
+  const comps = r.components || [];
+  if (comps.some(function (c) { return c.status === 'rename'; })) return true;
+  if (r.is_zip && r.game && r.path) {
+    const base = String(r.path).split(/[/\\]/).pop() || '';
+    if (base && base.toLowerCase() !== (r.game + '.zip').toLowerCase()) return true;
+  }
+  return false;
+}
+
+async function openResultDetail(idx) {
+  const r0 = RESULTS[idx];
+  if (!r0) return;
+  DETAIL_IDX = idx;
+  const modal = document.getElementById('detailModal');
+  const title = document.getElementById('detailTitle');
+  const meta = document.getElementById('detailMeta');
+  const list = document.getElementById('detailList');
+  const renBtn = document.getElementById('detailRenameBtn');
+  if (!modal || !list) return toast(t('detail.unavailable'), false);
+  if (renBtn) renBtn.style.display = 'none';
+
+  title.textContent = (r0.game || r0.expected || r0.found || 'ROM') + ' — ' + t('detail.title');
+  meta.innerHTML = '…';
+  list.innerHTML = '<div class="modal-item" style="color:var(--text2)">' + t('detail.loading') + '</div>';
+  modal.classList.add('open');
+
+  let row = r0;
+  try {
+    const data = await api('/api/result_detail', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ index: idx })
+    });
+    if (data.error) {
+      meta.innerHTML = '<span style="color:var(--red)">' + esc(data.error) + '</span>';
+      list.innerHTML = '';
+      return;
+    }
+    row = data.row || r0;
+    // garder components côté client pour rowNeedsRename
+    if (row.components) {
+      RESULTS[idx] = Object.assign({}, RESULTS[idx] || {}, { components: row.components, status: row.status, message: row.message, found: row.found, path: row.path });
+    }
+  } catch (e) {
+    meta.innerHTML = '<span style="color:var(--red)">' + esc(String(e)) + '</span>';
+    return;
+  }
+
+  const st = row.status || '';
+  const parts = [];
+  parts.push('<b>' + t('detail.state') + ' :</b> <span class="st st-' + esc(st) + '">' + esc(ST_LABEL[st] || st) + '</span>');
+  if (row.description) parts.push('<b>' + t('detail.name') + ' :</b> ' + esc(row.description));
+  if (row.expected) parts.push('<b>' + t('detail.expected') + ' :</b> <span class="mono">' + esc(row.expected) + '</span>');
+  if (row.found) parts.push('<b>' + t('detail.found') + ' :</b> <span class="mono">' + esc(row.found) + '</span>');
+  if (row.path) parts.push('<b>' + t('detail.path') + ' :</b> <span class="mono">' + esc(row.path) + '</span>');
+  if (row.bios) parts.push('<b>' + t('detail.bios') + ' :</b> ' + esc(row.bios));
+  if (row.cloneof) parts.push('<b>' + t('detail.cloneof') + ' :</b> ' + esc(row.cloneof));
+  if (row.mtype) parts.push('<b>' + t('detail.type') + ' :</b> ' + esc(row.mtype));
+  if (row.driver_status) parts.push('<b>' + t('detail.driver') + ' :</b> ' + esc(row.driver_status));
+  if (row.message) parts.push('<b>' + t('detail.message') + ' :</b> ' + esc(row.message));
+  if (row.crc) parts.push('<b>' + t('detail.roms') + ' :</b> ' + esc(row.crc));
+  meta.innerHTML = parts.join(' &nbsp;·&nbsp; ');
+
+  const comps = row.components || [];
+  if (!comps.length) {
+    list.innerHTML = '<div class="modal-item" style="color:var(--text2)">' + t('detail.none') + '</div>';
+    if (renBtn) renBtn.style.display = rowIsRepairable(row) ? '' : 'none';
+    return;
+  }
+
+  const counts = {};
+  for (const c of comps) counts[c.status] = (counts[c.status] || 0) + 1;
+  const summary = Object.keys(counts).map(function (k) {
+    return '<span class="detail-badge ' + k + '">' + (COMP_LABELS[k] || k) + ' ' + counts[k] + '</span>';
+  }).join(' ');
+
+  let html = '<div style="padding:8px 12px;border-bottom:1px solid var(--border)">' + summary + '</div>';
+  html += '<table class="detail-table"><thead><tr>';
+  html += '<th>' + t('detail.col.state') + '</th><th>' + t('detail.col.expected') + '</th><th>' + t('detail.col.found') + '</th><th>' + t('detail.col.crc') + '</th><th>' + t('detail.col.size') + '</th><th>' + t('detail.col.info') + '</th>';
+  html += '</tr></thead><tbody>';
+
+  for (const c of comps) {
+    const stc = c.status || '';
+    const crc = c.crc_expected
+      ? (c.crc_found && c.crc_found !== c.crc_expected
+          ? '<span class="mono">' + esc(c.crc_expected) + '</span> → <span class="mono comp-bad_crc">' + esc(c.crc_found) + '</span>'
+          : '<span class="mono">' + esc(c.crc_expected || c.crc_found || '') + '</span>')
+      : (c.sha1_expected
+          ? '<span class="mono" title="SHA1">' + esc((c.sha1_expected || '').slice(0, 12)) + '…</span>'
+          : (c.crc_found ? '<span class="mono">' + esc(c.crc_found) + '</span>' : '—'));
+    let size = '—';
+    if (c.size_expected || c.size_found) {
+      size = formatSize(c.size_found || c.size_expected);
+      if (c.size_expected && c.size_found && c.size_expected !== c.size_found) {
+        size = formatSize(c.size_expected) + ' → ' + formatSize(c.size_found);
+      }
+    }
+    html += '<tr>';
+    html += '<td><span class="detail-badge ' + esc(stc) + '">' + esc(COMP_LABELS[stc] || stc) + '</span></td>';
+    html += '<td class="mono">' + esc(c.expected || (c.kind === 'extra' ? '—' : '')) + '</td>';
+    html += '<td class="mono">' + esc(c.found || '—') + '</td>';
+    html += '<td>' + crc + '</td>';
+    html += '<td class="mono">' + size + '</td>';
+    html += '<td class="comp-' + esc(stc) + '">' + esc(c.message || '') + '</td>';
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  list.innerHTML = html;
+  if (renBtn) renBtn.style.display = rowIsRepairable(row) ? '' : 'none';
+}
+
+async function repairFromDetail() {
+  const idx = DETAIL_IDX;
+  if (idx < 0 || !RESULTS[idx]) return;
+  const r = RESULTS[idx];
+  showLoading(t('loading.repair') || t('loading.default'), r.game || r.found || r.expected || '');
+  try {
+    const data = await api('/api/repair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ index: idx, indices: [idx], game: r.game || '', path: r.path || '' })
+    });
+    if (data.error) { toast(data.error, false); return; }
+    if (data.failed && data.failed.length) {
+      toast(data.failed[0].error || 'Échec', false);
+    }
+    if (data.rows && data.rows[0]) {
+      RESULTS[idx] = Object.assign({}, RESULTS[idx], data.rows[0].row || {});
+    }
+    INDEXED = [];
+    rebuildIndex();
+    if (data.counts) updateSummary(data.counts);
+    renderTable();
+    const msg = (data.rows && data.rows[0] && data.rows[0].message) || t('report.repaired');
+    toast(msg);
+    await openResultDetail(idx);
+  } catch (e) {
+    toast(String(e), false);
+  } finally {
+    hideLoading();
+  }
+}
+
+function rowIsRepairable(r) {
+  if (!r) return false;
+  if (r.repairable) return true;
+  if (r.status === 'rename') return true;
+  if ((r.available_count || 0) > 0) return true;
+  const comps = r.components || [];
+  if (comps.some(function (c) {
+    return c.status === 'rename' || c.status === 'extra' || c.status === 'available';
+  })) return true;
+  if ((r.status === 'missing' || !r.path) && comps.some(function (c) { return c.status === 'available'; })) return true;
+  // ZIP présent mais nom ≠ game.zip
+  if (r.game && r.path) {
+    const base = String(r.path).split(/[/\\]/).pop() || '';
+    if (base.toLowerCase() !== (r.game + '.zip').toLowerCase() &&
+        (r.status === 'good' || r.status === 'incomplete' || r.status === 'bad')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function actRepair() {
+  const idxs = [...SELECTED].filter(i => RESULTS[i] && rowIsRepairable(RESULTS[i]));
+  if (!idxs.length) return toast(t('toast.need_selection_repair') || t('toast.need_selection_rename'), false);
+  showLoading(t('loading.repair') || t('loading.default'), idxs.length + '…');
+  const items = [];
+  let ok = 0, fail = 0;
+  try {
+    // Un par un pour fiabilité (gros sets MAME) + game/path en secours
+    for (const i of idxs) {
+      const r = RESULTS[i];
+      const data = await api('/api/repair', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          indices: [i],
+          index: i,
+          game: r.game || '',
+          path: r.path || ''
+        })
+      });
+      if (data.error && !(data.repaired > 0)) {
+        fail++;
+        items.push({ ok: false, from: r.game || r.found || ('#' + i), error: data.error });
+        continue;
+      }
+      const repaired = data.repaired || 0;
+      for (const x of (data.rows || [])) {
+        if (RESULTS[x.index] !== undefined) RESULTS[x.index] = Object.assign({}, RESULTS[x.index], x.row || {});
+        items.push({ ok: true, action: 'Réparé', from: (x.row && (x.row.game || x.row.found)) || r.game || '', to: x.message || '' });
+      }
+      for (const f of (data.failed || [])) {
+        fail++;
+        items.push({ ok: false, from: f.game || r.game || ('#' + f.index), error: f.error });
+      }
+      ok += repaired;
+      if (data.counts) updateSummary(data.counts);
+      document.getElementById('loadingSub').textContent = (ok + fail) + ' / ' + idxs.length;
+    }
+    INDEXED = [];
+    rebuildIndex();
+    renderTable();
+  } catch (e) {
+    toast(String(e), false);
+    return;
+  } finally {
+    hideLoading();
+  }
+  SELECTED.clear();
+  updateActionButtons();
+  showReport(t('report.repair') || 'Compte rendu — Réparation', reportHtml([
+    { label: t('report.repaired') || 'Réparées', value: ok, cls: 'ok' },
+    { label: t('report.failed') || 'Échecs', value: fail, cls: fail ? 'fail' : '' },
+  ], items));
+  if (fail && !ok) toast(t('toast.need_selection_repair') || 'Réparation échouée — voir le compte rendu', false);
+  else if (ok) toast((ok + ' réparé(s)') + (fail ? (', ' + fail + ' échec(s)') : ''), !fail);
+}
+
+async function actRepairAll() {
+  const idxs = RESULTS.map((r, i) => ({ r, i })).filter(x => rowIsRepairable(x.r)).map(x => x.i);
+  if (!idxs.length) return toast(t('toast.need_selection_repair') || 'Rien à réparer', false);
+  SELECTED = new Set(idxs);
+  await actRepair();
+}
+
+async function actRename() {
+  const idxs = [...SELECTED].filter(i => RESULTS[i] && RESULTS[i].status === 'rename');
+  if (!idxs.length) return toast(t('toast.need_selection_rename'), false);
+  const items = [];
+  let ok = 0, fail = 0;
+  showLoading('Renommage en cours…', '0 / ' + idxs.length);
+  try {
+    let n = 0;
+    for (const i of idxs) {
+      n++;
+      document.getElementById('loadingSub').textContent = n + ' / ' + idxs.length;
+      const r = RESULTS[i];
+      const from = r.found || r.path || '';
+      const data = await api('/api/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ index: i }) });
+      if (data.error) {
+        fail++;
+        items.push({ ok: false, from: from, error: data.error });
+        continue;
+      }
+      RESULTS[i] = data.row; INDEXED = []; // force rebuild
+      ok++;
+      const to = data.row.found || data.message || '';
+      items.push({ ok: true, action: 'Renomme', from: from, to: to });
+      if (data.counts) updateSummary(data.counts);
+    }
+  } finally {
+    hideLoading();
+  }
+  SELECTED.clear();
+  renderTable();
+  showReport(t('report.rename'), reportHtml([
+    { label: 'Renommees', value: ok, cls: 'ok' },
+    { label: 'Echecs', value: fail, cls: fail ? 'fail' : '' },
+  ], items));
+}
+
+
+let _confirmResolve = null;
+
+function openConfirm(title, bodyHtml) {
+  return new Promise(function (resolve) {
+    _confirmResolve = resolve;
+    const titleEl = document.getElementById('confirmTitle');
+    const bodyEl = document.getElementById('confirmBody');
+    const modal = document.getElementById('confirmModal');
+    if (titleEl) titleEl.textContent = title || 'Confirmation';
+    if (bodyEl) bodyEl.innerHTML = bodyHtml || '';
+    if (modal) modal.classList.add('open');
+    else {
+      // fallback navigateur
+      resolve(window.confirm(title || 'Confirmer ?'));
+      _confirmResolve = null;
+    }
+  });
+}
+
+function closeConfirm(ok) {
+  const modal = document.getElementById('confirmModal');
+  if (modal) modal.classList.remove('open');
+  if (_confirmResolve) {
+    const r = _confirmResolve;
+    _confirmResolve = null;
+    r(!!ok);
+  }
+}
+
+async function actDelete() {
+  // Fichiers présents sur disque (path renseigné) — y compris Good en mode MAME
+  const idxs = [...SELECTED].filter(function (i) {
+    const r = RESULTS[i];
+    return r && r.path && r.status !== 'deleted' && r.status !== 'missing';
+  });
+  if (!idxs.length) return toast(t('toast.need_selection_delete'), false);
+
+  const n = idxs.length;
+  const nGood = idxs.filter(i => RESULTS[i].status === 'good').length;
+  const nRename = idxs.filter(i => RESULTS[i].status === 'rename').length;
+  const nValid = nGood + nRename;
+
+  let confirmed;
+  try {
+    if (nValid > 0) {
+      const details = [];
+      if (nGood) details.push('<strong>' + nGood + ' ' + t('pill.good') + '</strong>');
+      if (nRename) details.push('<strong>' + nRename + ' ' + t('pill.rename') + '</strong>');
+      const body =
+        '<p style="margin-bottom:10px">' + t('confirm.delete_valid_body', { n: n }) + '</p>' +
+        '<p style="margin-bottom:10px;color:var(--red)">' + details.join(' · ') + '</p>' +
+        '<p style="color:var(--red);font-weight:600">' + t('confirm.delete_valid_warn') + '</p>';
+      confirmed = await openConfirm(t('confirm.delete_valid_title'), body);
+    } else {
+      confirmed = await openConfirm(t('confirm.title'),
+        '<p>' + t('confirm.delete_files', { n: n }) + '</p>');
+    }
+  } catch (e) {
+    confirmed = window.confirm(t('confirm.delete_n', { n: n }));
+  }
+  if (!confirmed) return;
+
+  showLoading(t('loading.delete'), idxs.length + '…');
+  const items = [];
+  let done = 0, fail = 0;
+  try {
+    const data = await api('/api/delete_selected', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ indices: idxs })
+    });
+    if (data.error) {
+      toast(data.error, false);
+      return;
+    }
+    done = data.deleted || 0;
+    if (data.rows) applyRowPatches(data.rows);
+    else if (data.results) RESULTS = data.results;
+    else if (data.rows) {
+      for (const x of data.rows) {
+        if (RESULTS[x.index]) RESULTS[x.index] = x.row;
+      }
+    }
+    if (data.failed && data.failed.length) {
+      fail = data.failed.length;
+      for (const f of data.failed) {
+        items.push({ ok: false, from: f.path || ('#' + f.index), error: f.error });
+      }
+    }
+    if (data.counts) updateSummary(data.counts);
+    // lignes OK pour le rapport
+    for (const i of idxs) {
+      const r = RESULTS[i];
+      if (r && r.status === 'deleted') {
+        items.push({ ok: true, action: 'Supprimé', from: r.game || r.expected || '', to: '' });
+      }
+    }
+  } catch (e) {
+    toast(t('toast.delete_error', { e: e }), false);
+    return;
+  } finally {
+    hideLoading();
+  }
+  SELECTED.clear();
+  INDEXED = [];
+  rebuildIndex();
+  renderTable();
+  showReport(t('report.delete'), reportHtml([
+    { label: 'Supprimées', value: done, cls: 'ok' },
+    { label: 'Échecs', value: fail, cls: fail ? 'fail' : '' },
+  ], items));
+  toast(done + ' fichier(s) supprimé(s)' + (fail ? ', ' + fail + ' échec(s)' : ''));
+}
+
+async function actFixAll() {
+  const pending = RESULTS
+    .map((r, i) => ({ r, i }))
+    .filter(x => x.r.status === 'rename');
+  if (!pending.length) return toast('Aucune entree a renommer', false);
+
+  const items = [];
+  let ok = 0, fail = 0;
+  showLoading('Correction des noms…', '0 / ' + pending.length);
+  try {
+    let n = 0;
+    for (const { r, i } of pending) {
+      n++;
+      document.getElementById('loadingSub').textContent = n + ' / ' + pending.length;
+      const from = r.found || r.path || '';
+      const data = await api('/api/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ index: i }) });
+      if (data.error) {
+        fail++;
+        items.push({ ok: false, from: from, error: data.error });
+        continue;
+      }
+      RESULTS[i] = data.row; INDEXED = []; // force rebuild
+      ok++;
+      items.push({ ok: true, action: 'Renomme', from: from, to: data.row.found || data.message || '' });
+      if (data.counts) updateSummary(data.counts);
+    }
+  } finally {
+    hideLoading();
+  }
+  renderTable();
+  showReport('Compte rendu — Correction des noms', reportHtml([
+    { label: 'Renommees', value: ok, cls: 'ok' },
+    { label: 'Echecs', value: fail, cls: fail ? 'fail' : '' },
+  ], items));
+}
+
+async function actDeleteBads() {
+  const pending = RESULTS
+    .map((r, i) => ({ r, i }))
+    .filter(x => x.r.status === 'bad' || x.r.status === 'error')
+    .filter(x => x.r.path);
+  if (!pending.length) return toast('Aucun Bad/Error a supprimer', false);
+  if (!confirm('Supprimer TOUS les fichiers Bad / Error (' + pending.length + ') ?')) return;
+
+  const items = [];
+  let done = 0, fail = 0;
+  pending.sort((a, b) => b.i - a.i);
+  showLoading('Suppression des Bad…', '0 / ' + pending.length);
+  try {
+    let n = 0;
+    for (const { r, i } of pending) {
+      n++;
+      document.getElementById('loadingSub').textContent = n + ' / ' + pending.length;
+      const from = r.found || r.path || '';
+      const data = await api('/api/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ index: i }) });
+      if (data.error) {
+        fail++;
+        items.push({ ok: false, from: from, error: data.error });
+        continue;
+      }
+      RESULTS[i] = data.row; INDEXED = []; // force rebuild
+      done++;
+      items.push({ ok: true, action: 'Supprime', from: from });
+      if (data.counts) updateSummary(data.counts);
+    }
+  } finally {
+    hideLoading();
+  }
+  SELECTED = new Set();
+  renderTable();
+  showReport(t('report.delete_bads'), reportHtml([
+    { label: 'Supprimees', value: done, cls: 'ok' },
+    { label: 'Echecs', value: fail, cls: fail ? 'fail' : '' },
+  ], items));
+}
+
+
+
+document.getElementById('search').addEventListener('input', scheduleFilterRender);
+(function(){
+  const wrap = document.querySelector('.table-wrap');
+  if (!wrap) return;
+  let tick = false;
+  wrap.addEventListener('scroll', function() {
+    if (tick) return;
+    tick = true;
+    requestAnimationFrame(function(){ tick = false; renderVisible(); });
+  }, { passive: true });
+})();
+
+
+let BROWSER_MODE = 'roms', BROWSER_CUR = '';
+let BROWSER_DIRS = [];
+let BROWSER_FILES = [];
+let BROWSER_SORT = { col: 'mtime', dir: 'desc' };
+let BROWSER_PARTS = [];
+let BROWSER_PARENT = null;
+
+async function openBrowser(mode) {
+  // Depuis la modale Bases DAT, toujours le navigateur intégré (sinon z-index / Electron bloquent)
+  const datsOpen = document.getElementById('datsModal') && document.getElementById('datsModal').classList.contains('open');
+  const useElectron = window.electronAPI && window.electronAPI.isElectron && !datsOpen && !window._profDatSystemId;
+
+  if (useElectron) {
+    try {
+      if (mode === 'dat') {
+        const file = await window.electronAPI.openDatFile();
+        if (file) { document.getElementById('datPath').value = file; loadDat(); }
+        return;
+      }
+      if (mode === 'roms') {
+        const folder = await window.electronAPI.openRomsFolder();
+        if (folder) { document.getElementById('romsPath').value = folder; toast('Dossier sélectionné'); }
+        return;
+      }
+      // exe / xml : navigateur intégré ci-dessous
+    } catch (e) {
+      toast('Erreur dialogue : ' + e, false);
+      // continue vers navigateur intégré
+    }
+  }
+
+  BROWSER_MODE = mode || 'roms';
+  if (BROWSER_MODE === 'dat' || BROWSER_MODE === 'xml') {
+    BROWSER_SORT = { col: 'mtime', dir: 'desc' };
+  } else {
+    BROWSER_SORT = { col: 'name', dir: 'asc' };
+  }
+
+  const titles = {
+    dat: t('browser.dat'),
+    xml: t('browser.xml'),
+    exe: t('browser.exe'),
+    roms: t('browser.roms')
+  };
+  const titleEl = document.getElementById('browserTitle');
+  if (titleEl) titleEl.textContent = titles[BROWSER_MODE] || 'Parcourir';
+  const selBtn = document.getElementById('browserSelectBtn');
+  if (selBtn) selBtn.style.display = (BROWSER_MODE === 'roms' || BROWSER_MODE === 'tools_rezip') ? '' : 'none';
+
+  let start = '';
+  try {
+    // Collection : partir du DAT du système (ou dossier dat/ par défaut) — jamais roms/
+    if (BROWSER_MODE === 'dat' && window._profDatSystemId && CURRENT_PROFILE) {
+      const sys = (CURRENT_PROFILE.systems || []).find(function (x) { return x.id === window._profDatSystemId; });
+      if (sys && sys.dat) start = sys.dat;
+    }
+    if (BROWSER_MODE === 'dat') {
+      if (!start) start = (document.getElementById('datPath') && document.getElementById('datPath').value || '').trim();
+    } else if (BROWSER_MODE === 'xml') {
+      start = (document.getElementById('mameSourceXml') && document.getElementById('mameSourceXml').value || '').trim();
+    } else if (BROWSER_MODE === 'exe') {
+      start = (document.getElementById('mameExePath') && document.getElementById('mameExePath').value || '').trim();
+    } else if (BROWSER_MODE === 'tools_rezip') {
+      start = (document.getElementById('toolsRezipPath') && document.getElementById('toolsRezipPath').value || '').trim();
+      if (!start) start = (document.getElementById('romsPath') && document.getElementById('romsPath').value || '').trim();
+    } else {
+      start = (document.getElementById('romsPath') && document.getElementById('romsPath').value || '').trim();
+    }
+  } catch (e) {}
+
+  if (!start) {
+    if (BROWSER_MODE === 'dat' || BROWSER_MODE === 'xml' || BROWSER_MODE === 'exe') start = '{{ dat_default }}';
+    else start = '{{ roms_default }}';
+  }
+
+  const modal = document.getElementById('browserModal');
+  if (!modal) {
+    toast('Navigateur indisponible (browserModal manquant)', false);
+    return;
+  }
+  modal.classList.add('open');
+  try {
+    await browseTo(start);
+  } catch (e) {
+    toast('Erreur parcours : ' + e, false);
+  }
+}
+
+
+function closeBrowser() { document.getElementById('browserModal').classList.remove('open'); }
+
+async function browseTo(path) {
+  const listEl = document.getElementById('browserList');
+  if (listEl) listEl.innerHTML = '<div class="modal-item" style="color:var(--text2)">Chargement…</div>';
+  let data;
+  try {
+    data = await api('/api/browse?path=' + encodeURIComponent(path) + '&mode=' + BROWSER_MODE);
+  } catch (e) {
+    if (listEl) listEl.innerHTML = '<div class="modal-item" style="color:var(--red)">Erreur : ' + esc(String(e)) + '</div>';
+    return;
+  }
+  if (data.error) {
+    toast(data.error, false);
+    if (listEl) listEl.innerHTML = '<div class="modal-item" style="color:var(--red)">' + esc(data.error) + '</div>';
+    return;
+  }
+  BROWSER_CUR = data.current;
+  document.getElementById('browserPath').textContent = data.current;
+
+  const driveBar = document.getElementById('driveBar');
+  driveBar.innerHTML = '';
+  const drives = data.drives || [];
+  if (drives.length) {
+    const lab = document.createElement('span');
+    lab.className = 'drive-bar-label';
+    lab.textContent = 'Disque :';
+    driveBar.appendChild(lab);
+    const cur = (data.current || '').replace(/\\/g, '/').toUpperCase();
+    for (const d of drives) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'drive-chip';
+      chip.textContent = d.name;
+      const dpath = (d.path || '').replace(/\\/g, '/').toUpperCase();
+      if (cur === dpath || cur.startsWith(dpath.replace(/\/$/, '') + '/')) chip.classList.add('active');
+      chip.addEventListener('click', function () { browseTo(d.path); });
+      driveBar.appendChild(chip);
+    }
+  }
+
+  const list = document.getElementById('browserList');
+  BROWSER_PARENT = data.parent || null;
+  BROWSER_DIRS = data.dirs || [];
+  BROWSER_FILES = data.files || [];
+  if (BROWSER_MODE === 'dat' || BROWSER_MODE === 'xml') {
+    if (!BROWSER_SORT.col) BROWSER_SORT = { col: 'mtime', dir: 'desc' };
+  }
+  renderBrowserList();
+}
+
+function formatBrowserDate(mtime) {
+  if (!mtime) return '—';
+  try {
+    const d = new Date(mtime * 1000);
+    if (isNaN(d.getTime())) return '—';
+    const pad = function (n) { return n < 10 ? '0' + n : '' + n; };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+      + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  } catch (e) { return '—'; }
+}
+
+function formatBrowserSize(n) {
+  n = Number(n) || 0;
+  if (n <= 0) return '—';
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';
+  return (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
+
+function sortBrowserItems(items, isDir) {
+  const arr = items.slice();
+  // Dossiers : toujours ordre alphabétique (A→Z)
+  if (isDir) {
+    arr.sort(function (a, b) {
+      const va = (a.name || a.label || '').toLowerCase();
+      const vb = (b.name || b.label || '').toLowerCase();
+      if (va < vb) return -1;
+      if (va > vb) return 1;
+      return 0;
+    });
+    return arr;
+  }
+  const col = BROWSER_SORT.col || 'name';
+  const dir = BROWSER_SORT.dir === 'asc' ? 1 : -1;
+  arr.sort(function (a, b) {
+    let va, vb;
+    if (col === 'size') {
+      va = a.size || 0; vb = b.size || 0;
+      if (va !== vb) return (va - vb) * dir;
+    } else if (col === 'mtime') {
+      va = a.mtime || 0; vb = b.mtime || 0;
+      if (va !== vb) return (va - vb) * dir;
+    }
+    va = (a.name || a.label || '').toLowerCase();
+    vb = (b.name || b.label || '').toLowerCase();
+    if (va < vb) return -1 * dir;
+    if (va > vb) return 1 * dir;
+    return 0;
+  });
+  return arr;
+}
+
+function setBrowserSort(col) {
+  if (BROWSER_SORT.col === col) {
+    BROWSER_SORT.dir = BROWSER_SORT.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    BROWSER_SORT.col = col;
+    // Date / taille : desc par défaut (récent / gros en premier)
+    BROWSER_SORT.dir = (col === 'name') ? 'asc' : 'desc';
+  }
+  renderBrowserList();
+}
+
+function renderBrowserList() {
+  const list = document.getElementById('browserList');
+  if (!list) return;
+
+  const showMeta = (BROWSER_MODE === 'dat' || BROWSER_MODE === 'xml' || BROWSER_MODE === 'exe');
+  const parts = [];
+
+  if (BROWSER_PARENT) {
+    parts.push({
+      icon: '⬆️', label: '..', path: BROWSER_PARENT, kind: 'dir',
+      size: 0, mtime: 0, name: '..'
+    });
+  }
+  const dirs = sortBrowserItems(BROWSER_DIRS, true);
+  for (const d of dirs) {
+    parts.push({
+      icon: '📁', label: d.name, path: d.path, kind: 'dir',
+      size: d.size || 0, mtime: d.mtime || 0, name: d.name
+    });
+  }
+  if (showMeta) {
+    const files = sortBrowserItems(BROWSER_FILES, false);
+    const icon = BROWSER_MODE === 'exe' ? '⚙️' : '📄';
+    for (const f of files) {
+      parts.push({
+        icon: icon, label: f.name, path: f.path, kind: 'file',
+        size: f.size || 0, mtime: f.mtime || 0, name: f.name
+      });
+    }
+  }
+  BROWSER_PARTS = parts;
+
+  if (!parts.length) {
+    list.innerHTML = '<div class="modal-item" style="color:var(--text2)">' +
+      (t('browser.empty') || 'Dossier vide') + '</div>';
+    list.onclick = null;
+    return;
+  }
+
+  const thClass = function (col) {
+    if (BROWSER_SORT.col !== col) return '';
+    return BROWSER_SORT.dir === 'asc' ? 'sorted-asc' : 'sorted-desc';
+  };
+
+  let html = '<table class="browser-table"><thead><tr>';
+  html += '<th class="col-name ' + thClass('name') + '" data-bcol="name">' +
+    (t('browser.col_name') || 'Nom') + '</th>';
+  if (showMeta) {
+    html += '<th class="col-date ' + thClass('mtime') + '" data-bcol="mtime">' +
+      (t('browser.col_date') || 'Date') + '</th>';
+    html += '<th class="col-size ' + thClass('size') + '" data-bcol="size">' +
+      (t('browser.col_size') || 'Taille') + '</th>';
+  } else if ((BROWSER_MODE === 'roms' || BROWSER_MODE === 'tools_rezip')) {
+    html += '<th style="width:90px"></th>';
+  }
+  html += '</tr></thead><tbody>';
+
+  for (let i = 0; i < parts.length; i++) {
+    const it = parts[i];
+    html += '<tr class="browser-row" data-i="' + i + '">';
+    html += '<td class="col-name"><span class="icon">' + it.icon + '</span>' + esc(it.label) + '</td>';
+    if (showMeta) {
+      html += '<td class="col-date">' + (it.kind === 'file' ? formatBrowserDate(it.mtime) : '—') + '</td>';
+      html += '<td class="col-size">' + (it.kind === 'file' ? formatBrowserSize(it.size) : '') + '</td>';
+    } else if ((BROWSER_MODE === 'roms' || BROWSER_MODE === 'tools_rezip')) {
+      const selBtn = (it.kind === 'dir' && it.label !== '..')
+        ? ('<button type="button" class="drive-chip" data-sel="' + i + '" title="' +
+          (t('browser.choose') || 'Choisir') + '">' + (t('browser.choose') || 'Choisir') + '</button>')
+        : '';
+      html += '<td style="text-align:right">' + selBtn + '</td>';
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  list.innerHTML = html;
+
+  list.onclick = function (ev) {
+    const th = ev.target.closest('th[data-bcol]');
+    if (th) {
+      setBrowserSort(th.getAttribute('data-bcol'));
+      return;
+    }
+    const sel = ev.target.closest('[data-sel]');
+    if (sel) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const it = BROWSER_PARTS[Number(sel.getAttribute('data-sel'))];
+      if (it) {
+        document.getElementById('romsPath').value = it.path;
+        closeBrowser();
+        toast(t('browser.folder_selected') || 'Dossier sélectionné');
+      }
+      return;
+    }
+    const row = ev.target.closest('tr.browser-row[data-i]');
+    if (!row) return;
+    const it = BROWSER_PARTS[Number(row.getAttribute('data-i'))];
+    if (!it) return;
+    if (it.kind === 'dir') browseTo(it.path);
+    else pickFile(it.path);
+  };
+}
+
+function pickFile(path) {
+  closeBrowser();
+  if (!path) return;
+  if (window._profDatSystemId && CURRENT_PROFILE) {
+    const sid = window._profDatSystemId;
+    window._profDatSystemId = null;
+    applyProfileDat(sid, path);
+    return;
+  }
+  if (BROWSER_MODE === 'xml') {
+    const el = document.getElementById('mameSourceXml');
+    if (el) el.value = path;
+    toast('XML sélectionné');
+    if (typeof analyzeMameSource === 'function') analyzeMameSource();
+    return;
+  }
+  if (BROWSER_MODE === 'exe') {
+    const el = document.getElementById('mameExePath');
+    if (el) el.value = path;
+    toast('MAME sélectionné : ' + path);
+    return;
+  }
+  const datEl = document.getElementById('datPath');
+  if (datEl) datEl.value = path;
+  if (typeof loadDat === 'function') loadDat();
+}
+
+
+function selectBrowserPath() {
+  if (window._profBrowse) {
+    window._profBrowse = false;
+    const el = document.getElementById('profRoot');
+    if (el) el.value = BROWSER_CUR;
+    closeBrowser();
+    toast(t('browser.folder_selected') || 'Dossier sélectionné');
+    return;
+  }
+  if (BROWSER_MODE === 'tools_rezip') {
+    const el = document.getElementById('toolsRezipPath');
+    if (el) el.value = BROWSER_CUR;
+    closeBrowser();
+    toast(t('browser.folder_selected') || 'Dossier sélectionné');
+    return;
+  }
+  document.getElementById('romsPath').value = BROWSER_CUR;
+  closeBrowser();
+  toast(t('browser.folder_selected') || 'Dossier sélectionné');
+}
+
+let DAT_PACK = 'nointro', DAT_ITEMS = [];
+
+
+let MAME_VERSIONS = [];
+
+function switchDatsTab(tab) {
+  const cat = document.getElementById('datsPanelCatalog');
+  const gen = document.getElementById('datsPanelMamegen');
+  const fb = document.getElementById('datsPanelFbneo');
+  const t1 = document.getElementById('tab-catalog');
+  const t2 = document.getElementById('tab-mamegen');
+  const t3 = document.getElementById('tab-fbneover');
+  if (cat) cat.style.display = 'none';
+  if (gen) gen.style.display = 'none';
+  if (fb) fb.style.display = 'none';
+  if (t1) t1.classList.remove('active');
+  if (t2) t2.classList.remove('active');
+  if (t3) t3.classList.remove('active');
+  if (tab === 'mamegen') {
+    if (gen) gen.style.display = 'flex';
+    if (t2) t2.classList.add('active');
+    loadMameVersions(false);
+    loadMameCategories(false);
+  } else if (tab === 'fbneover') {
+    if (fb) fb.style.display = 'flex';
+    if (t3) t3.classList.add('active');
+    loadFbneoVersions(false);
+  } else {
+    if (cat) cat.style.display = '';
+    if (t1) t1.classList.add('active');
+  }
+}
+
+
+let FBNEO_VERSIONS = [];
+
+async function loadFbneoVersions(force) {
+  const sel = document.getElementById('fbneoVersionSelect');
+  const st = document.getElementById('fbneoVerStatus');
+  const hist = document.getElementById('fbneoVerHistory');
+  if (!sel) return;
+  if (st) st.textContent = 'Chargement des versions FBNeo…';
+  try {
+    const q = force ? '?refresh=1' : '';
+    const data = await api('/api/fbneo/versions' + q);
+    if (data.error) {
+      if (st) st.textContent = data.error;
+      sel.innerHTML = '<option value="">Erreur</option>';
+      return;
+    }
+    FBNEO_VERSIONS = data.items || [];
+    sel.innerHTML = '';
+    if (!FBNEO_VERSIONS.length) {
+      sel.innerHTML = '<option value="">Aucune version</option>';
+      if (st) st.textContent = 'Aucune version trouvée';
+      return;
+    }
+    for (const v of FBNEO_VERSIONS) {
+      const opt = document.createElement('option');
+      opt.value = v.id || v.tag || '';
+      let label = v.name || v.tag || v.id;
+      if (v.frontend_label) label += v.frontend_label;
+      else if (v.published) label += ' — ' + v.published;
+      opt.textContent = label;
+      if (v.frontends) {
+        const fe = v.frontends;
+        const tips = [];
+        if (fe.retrobat) tips.push('RetroBat ' + fe.retrobat);
+        if (fe.batocera) tips.push('Batocera ' + fe.batocera);
+        if (fe.recalbox) tips.push('Recalbox ' + fe.recalbox);
+        if (tips.length) opt.title = tips.join(' · ');
+      }
+      sel.appendChild(opt);
+    }
+    // Historique tableau
+    if (hist) {
+      let html = '<table class="browser-table" style="font-size:12px"><thead><tr>' +
+        '<th>Build</th><th>RetroBat</th><th>Batocera</th><th>Recalbox</th><th>Source</th></tr></thead><tbody>';
+      for (const v of FBNEO_VERSIONS) {
+        const fe = v.frontends || {};
+        html += '<tr>';
+        html += '<td class="mono">' + esc(v.build_date || v.tag || v.id || '') +
+          (v.is_latest ? ' <span style="color:var(--accent)">(latest)</span>' : '') + '</td>';
+        html += '<td>' + esc(fe.retrobat || '—') + '</td>';
+        html += '<td>' + esc(fe.batocera || '—') + '</td>';
+        html += '<td>' + esc(fe.recalbox || '—') + '</td>';
+        html += '<td style="color:var(--text2)">' + esc(v.source || '') + '</td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+      hist.innerHTML = html;
+    }
+    if (st) st.textContent = FBNEO_VERSIONS.length + ' builds — labels RetroBat / Batocera / Recalbox inclus';
+  } catch (e) {
+    if (st) st.textContent = 'Erreur : ' + e;
+    sel.innerHTML = '<option value="">Erreur</option>';
+  }
+}
+
+async function downloadFbneoVersion() {
+  const sel = document.getElementById('fbneoVersionSelect');
+  const st = document.getElementById('fbneoVerStatus');
+  const id = sel && sel.value;
+  if (!id) return toast('Choisissez une version FBNeo', false);
+  if (st) st.textContent = 'Téléchargement DAT FBNeo ' + id + '…';
+  showLoading('Téléchargement FBNeo', id);
+  try {
+    const data = await api('/api/fbneo/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ version_id: id })
+    });
+    if (data.error) {
+      if (st) st.textContent = data.error;
+      toast(data.error, false);
+      return;
+    }
+    const msg = 'OK — ' + (data.extracted || 0) + ' DAT → ' + (data.dir || 'dat/fbneo');
+    if (st) st.textContent = msg;
+    toast(msg);
+  } catch (e) {
+    if (st) st.textContent = String(e);
+    toast(String(e), false);
+  } finally {
+    hideLoading();
+  }
+}
+
+async function loadMameVersions(force) {
+  const sel = document.getElementById('mameVersionSelect');
+  const st = document.getElementById('mameGenStatus');
+  if (!sel) {
+    console.error('mameVersionSelect introuvable');
+    return;
+  }
+  if (!force && MAME_VERSIONS.length) {
+    return;
+  }
+  if (st) st.textContent = 'Chargement des versions MAME…';
+  sel.innerHTML = '<option value="">Chargement…</option>';
+  try {
+    const data = await api('/api/mame/versions');
+    if (data.error && !(data.items && data.items.length)) {
+      if (st) st.textContent = data.error;
+      sel.innerHTML = '<option value="">Erreur de chargement</option>';
+      return;
+    }
+    MAME_VERSIONS = data.items || [];
+    sel.innerHTML = '';
+    if (!MAME_VERSIONS.length) {
+      sel.innerHTML = '<option value="">Aucune version trouvée</option>';
+      if (st) st.textContent = 'Aucune version listxml disponible';
+      return;
+    }
+    for (const v of MAME_VERSIONS) {
+      const opt = document.createElement('option');
+      opt.value = v.tag;
+      let label = v.name || v.tag;
+      if (v.frontend_label) label += v.frontend_label;
+      else if (v.published) label += ' — ' + v.published;
+      opt.textContent = label;
+      if (v.frontends) {
+        const fe = v.frontends;
+        const tips = [];
+        if (fe.retrobat) tips.push('RetroBat ' + fe.retrobat);
+        if (fe.batocera) tips.push('Batocera ' + fe.batocera);
+        if (fe.recalbox) tips.push('Recalbox ' + fe.recalbox);
+        if (tips.length) opt.title = tips.join(' · ');
+      }
+      sel.appendChild(opt);
+    }
+    let msg = MAME_VERSIONS.length + ' versions — labels RetroBat / Batocera / Recalbox inclus';
+    if (data.warning) msg += ' (mode secours)';
+    if (st) st.textContent = msg;
+  } catch (e) {
+    console.error(e);
+    if (st) st.textContent = 'Erreur : ' + e;
+    sel.innerHTML = '<option value="">Erreur — réessayez</option>';
+  }
+}
+
+
+async function generateMameXml() {
+  const sel = document.getElementById('mameVersionSelect');
+  const tag = sel && sel.value;
+  if (!tag) return toast('Choisissez une version MAME', false);
+  const st = document.getElementById('mameGenStatus');
+  st.textContent = 'Téléchargement listxml ' + tag + '…';
+  showLoading('Génération listxml MAME', tag);
+  try {
+    const data = await api('/api/mame/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tag })
+    });
+    if (data.error) { st.textContent = data.error; toast(data.error, false); return; }
+    st.textContent = 'OK → ' + data.path + ' (' + formatSize(data.size) + ')';
+    toast('XML généré : ' + data.path);
+    if (data.path) {
+      document.getElementById('datPath').value = data.path;
+      const src = document.getElementById('mameSourceXml');
+      if (src) src.value = data.path;
+      analyzeMameSource();
+      try { await loadDat(); } catch (e) {}
+    }
+  } catch (e) {
+    st.textContent = String(e);
+    toast(String(e), false);
+  } finally {
+    hideLoading();
+  }
+}
+
+async function generateMameXmlLocal() {
+  const path = (document.getElementById('mameExePath').value || '').trim();
+  if (!path) return toast('Indiquez le chemin de mame.exe', false);
+  const st = document.getElementById('mameGenStatus');
+  st.textContent = 'Exécution de mame -listxml… (peut prendre 1–2 min)';
+  showLoading('mame -listxml', path);
+  try {
+    const data = await api('/api/mame/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mame_exe: path })
+    });
+    if (data.error) { st.textContent = data.error; toast(data.error, false); return; }
+    st.textContent = 'OK → ' + data.path + ' (' + formatSize(data.size) + ') — v' + (data.version || '?');
+    toast('XML généré depuis MAME local');
+    if (data.path) {
+      document.getElementById('datPath').value = data.path;
+      const src = document.getElementById('mameSourceXml');
+      if (src) src.value = data.path;
+      analyzeMameSource();
+      try { await loadDat(); } catch (e) {}
+    }
+  } catch (e) {
+    st.textContent = String(e);
+    toast(String(e), false);
+  } finally {
+    hideLoading();
+  }
+}
+
+
+function selectBiosPreset(names) {
+  const sel = document.getElementById('optBiosFilter');
+  if (!sel) return;
+  const set = new Set(names.map(n => n.toLowerCase()));
+  for (const opt of sel.options) {
+    opt.selected = set.has((opt.value || '').toLowerCase());
+  }
+}
+
+
+let CAT_EXCLUDE = [];   // mots-clés exclusion (catlist + genre, sous-chaîne)
+let CAT_SUGGESTIONS = []; // liste chargée depuis l'API
+let CAT_LOADED = false;
+
+function collectMameExportOptions() {
+  const biosSel = document.getElementById('optBiosFilter');
+  const bios_filter = [];
+  if (biosSel) {
+    for (const opt of biosSel.selectedOptions) {
+      if (opt.value) bios_filter.push(opt.value);
+    }
+  }
+  const driver_status = [];
+  if (document.getElementById('stGood') && document.getElementById('stGood').checked) driver_status.push('good');
+  if (document.getElementById('stImperfect') && document.getElementById('stImperfect').checked) driver_status.push('imperfect');
+  if (document.getElementById('stPreliminary') && document.getElementById('stPreliminary').checked) driver_status.push('preliminary');
+
+  syncCategoryHiddenFields();
+  const modeInclude = document.getElementById('catModeInclude') && document.getElementById('catModeInclude').checked;
+  const keywords = CAT_EXCLUDE.slice();
+
+  return {
+    parents_only: !!(document.getElementById('optParentsOnly') && document.getElementById('optParentsOnly').checked),
+    include_clones: !!(document.getElementById('optIncludeClones') && document.getElementById('optIncludeClones').checked),
+    include_bios: !!(document.getElementById('optIncludeBios') && document.getElementById('optIncludeBios').checked),
+    auto_bios: !!(document.getElementById('optAutoBios') && document.getElementById('optAutoBios').checked),
+    include_devices: !!(document.getElementById('optIncludeDevices') && document.getElementById('optIncludeDevices').checked),
+    include_mechanical: !!(document.getElementById('optIncludeMech') && document.getElementById('optIncludeMech').checked),
+    runnable_only: !!(document.getElementById('optRunnableOnly') && document.getElementById('optRunnableOnly').checked),
+    require_roms: !!(document.getElementById('optRequireRoms') && document.getElementById('optRequireRoms').checked),
+    bios_filter,
+    driver_status,
+    manufacturer: (document.getElementById('optManufacturer') && document.getElementById('optManufacturer').value || '').trim(),
+    year_from: (document.getElementById('optYearFrom') && document.getElementById('optYearFrom').value || '').trim(),
+    year_to: (document.getElementById('optYearTo') && document.getElementById('optYearTo').value || '').trim(),
+    // Les mots-clés s'appliquent à genre.ini ET catlist.ini (sous-chaîne)
+    genres_include: modeInclude ? keywords : [],
+    genres_exclude: modeInclude ? [] : keywords,
+    cats_include: modeInclude ? keywords : [],
+    cats_exclude: modeInclude ? [] : keywords,
+  };
+}
+
+function syncCategoryHiddenFields() {
+  const joined = CAT_EXCLUDE.join(', ');
+  const ex = document.getElementById('optCatsExclude');
+  const inc = document.getElementById('optCatsInclude');
+  if (ex) ex.value = joined;
+  if (inc) inc.value = joined;
+  renderCategoryTags();
+}
+
+function renderCategoryTags() {
+  const box = document.getElementById('catExcludeTags');
+  if (!box) return;
+  if (!CAT_EXCLUDE.length) {
+    box.innerHTML = '';
+    return;
+  }
+  box.innerHTML = CAT_EXCLUDE.map(function (k, i) {
+    return '<span class="cat-tag">' + esc(k) +
+      ' <button type="button" title="Retirer" onclick="removeCategoryExclusion(' + i + ')">×</button></span>';
+  }).join('');
+}
+
+function addCategoryExclusion(raw) {
+  const input = document.getElementById('catAddInput');
+  const val = (raw != null ? String(raw) : (input && input.value || '')).trim();
+  if (!val) return;
+  // autoriser plusieurs séparés par virgule
+  const parts = val.split(/[,;]+/).map(function (s) { return s.trim(); }).filter(Boolean);
+  let added = 0;
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    const exists = CAT_EXCLUDE.some(function (x) { return x.toLowerCase() === p.toLowerCase(); });
+    if (!exists) {
+      CAT_EXCLUDE.push(p);
+      added++;
+    }
+  }
+  if (input) input.value = '';
+  syncCategoryHiddenFields();
+  if (added) toast(added + ' exclusion(s) ajoutée(s)');
+}
+
+function removeCategoryExclusion(idx) {
+  if (idx < 0 || idx >= CAT_EXCLUDE.length) return;
+  const removed = CAT_EXCLUDE.splice(idx, 1)[0];
+  syncCategoryHiddenFields();
+  toast('Retiré : ' + removed);
+}
+
+function presetCatExclude(list) {
+  for (let i = 0; i < list.length; i++) {
+    const p = list[i];
+    const exists = CAT_EXCLUDE.some(function (x) { return x.toLowerCase() === p.toLowerCase(); });
+    if (!exists) CAT_EXCLUDE.push(p);
+  }
+  syncCategoryHiddenFields();
+  toast('Exclusions : ' + CAT_EXCLUDE.join(', '));
+}
+
+function clearCategoryFilters() {
+  CAT_EXCLUDE = [];
+  syncCategoryHiddenFields();
+  toast('Exclusions effacées');
+}
+
+async function loadMameCategories(force) {
+  const st = document.getElementById('mameGenStatus');
+  const st2 = document.getElementById('catLoadStatus');
+  if (CAT_LOADED && !force) return;
+  if (st) st.textContent = 'Chargement Progetto-SNAPS (genre / catlist)…';
+  if (st2) st2.textContent = 'Chargement…';
+  try {
+    const data = await api('/api/mame/categories' + (force ? '?refresh=1' : ''));
+    if (data.error) {
+      if (st) st.textContent = data.error;
+      if (st2) st2.textContent = data.error;
+      toast(data.error, false);
+      return;
+    }
+    CAT_SUGGESTIONS = [];
+    const genres = data.genres || [];
+    for (let i = 0; i < genres.length; i++) {
+      CAT_SUGGESTIONS.push(genres[i].name || genres[i]);
+    }
+    // suggestions fréquentes catlist
+    const extra = ['Mahjong', 'Casino', 'Gambling', 'Slot', 'Mature', 'Quiz', 'Puzzle', 'Tabletop', 'Medal Game'];
+    for (let i = 0; i < extra.length; i++) {
+      if (CAT_SUGGESTIONS.indexOf(extra[i]) < 0) CAT_SUGGESTIONS.push(extra[i]);
+    }
+    const dl = document.getElementById('catSuggestions');
+    if (dl) {
+      dl.innerHTML = CAT_SUGGESTIONS.map(function (s) {
+        return '<option value="' + esc(s).replace(/"/g, '&quot;') + '">';
+      }).join('');
+    }
+    CAT_LOADED = true;
+    const msg = genres.length + ' genres · ' + (data.catlist || []).length + ' catégories catlist';
+    if (st) st.textContent = msg;
+    if (st2) st2.textContent = msg;
+    toast('Catégories chargées');
+  } catch (e) {
+    if (st) st.textContent = String(e);
+    if (st2) st2.textContent = String(e);
+    toast(String(e), false);
+  }
+}
+
+// Entrée clavier sur le champ d'ajout
+document.addEventListener('DOMContentLoaded', function () {
+  const input = document.getElementById('catAddInput');
+  if (input) {
+    input.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        addCategoryExclusion();
+      }
+    });
+  }
+  renderCategoryTags();
+});
+
+async function analyzeMameSource() {
+  const path = (document.getElementById('mameSourceXml')?.value || '').trim();
+  const st = document.getElementById('mameGenStatus');
+  const statsEl = document.getElementById('mameSourceStats');
+  if (!path) {
+    if (st) st.textContent = 'Indiquez un fichier XML source';
+    return;
+  }
+  if (st) st.textContent = 'Analyse de ' + path + '…';
+  showLoading('Analyse listxml…', path);
+  try {
+    const data = await api('/api/mame/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    });
+    if (data.error) {
+      if (st) st.textContent = data.error;
+      toast(data.error, false);
+      return;
+    }
+    const s = data.stats || {};
+    if (statsEl) {
+      statsEl.innerHTML =
+        '<b>' + (s.total || 0).toLocaleString() + '</b> machines — ' +
+        (s.parents || 0) + ' parents, ' + (s.clones || 0) + ' clones, ' +
+        (s.bios || 0) + ' BIOS, ' + (s.devices || 0) + ' devices — ' +
+        'status: good ' + ((s.status || {}).good || 0) +
+        ' / imperfect ' + ((s.status || {}).imperfect || 0) +
+        ' / preliminary ' + ((s.status || {}).preliminary || 0);
+    }
+    const biosSel = document.getElementById('optBiosFilter');
+    if (biosSel && data.bios) {
+      const prev = new Set([...biosSel.selectedOptions].map(o => o.value));
+      biosSel.innerHTML = '';
+      if (!data.bios.length) {
+        biosSel.innerHTML = '<option value="">(aucun BIOS détecté)</option>';
+      } else {
+        for (const b of data.bios) {
+          const opt = document.createElement('option');
+          opt.value = b.name;
+          opt.textContent = b.name + ' (' + b.count + ')';
+          if (prev.has(b.name)) opt.selected = true;
+          biosSel.appendChild(opt);
+        }
+      }
+    }
+    if (st) st.textContent = 'Source prête — configurez les filtres puis exportez';
+  } catch (e) {
+    if (st) st.textContent = String(e);
+    toast(String(e), false);
+  } finally {
+    hideLoading();
+  }
+}
+
+async function exportMameFiltered() {
+  const source = (document.getElementById('mameSourceXml')?.value || '').trim();
+  if (!source) return toast('Analysez / indiquez d\'abord un XML source', false);
+  const opts = collectMameExportOptions();
+  if (opts.parents_only) opts.include_clones = false;
+  const output = (document.getElementById('mameOutName')?.value || '').trim();
+  const st = document.getElementById('mameGenStatus');
+  if (st) st.textContent = 'Export filtré en cours…';
+  showLoading('Export MAME filtré…', source);
+  try {
+    const data = await api('/api/mame/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source, output, options: opts })
+    });
+    if (data.error) {
+      if (st) st.textContent = data.error;
+      toast(data.error, false);
+      return;
+    }
+    if (st) {
+      let msg = 'Export OK → ' + data.path + ' — ' + data.kept + ' / ' + data.total +
+        ' machines (' + formatSize(data.size) + ')';
+      if (data.auto_bios_included && data.auto_bios_included.length) {
+        msg += ' · BIOS auto : ' + data.auto_bios_included.join(', ');
+      } else if (data.required_bios && data.required_bios.length && !(data.auto_bios_included || []).length) {
+        msg += ' · BIOS requis absents de la source : ' + data.required_bios.slice(0, 8).join(', ');
+      }
+      st.textContent = msg;
+    }
+    toast(data.kept + ' machines exportées');
+    if (data.path) {
+      document.getElementById('datPath').value = data.path;
+      try { await loadDat(); } catch (e) { toast('Export OK mais chargement DAT : ' + e, false); }
+    }
+  } catch (e) {
+    if (st) st.textContent = String(e);
+    toast(String(e), false);
+  } finally {
+    hideLoading();
+  }
+}
+
+function openDatsModal() {
+  document.getElementById('datsModal').classList.add('open');
+  switchDatsTab('catalog');
+  setPack(DAT_PACK);
+}
+function closeDatsModal() { document.getElementById('datsModal').classList.remove('open'); }
+
+async function setPack(pack) {
+  DAT_PACK = pack;
+  ['nointro','redump','mameredump','mame','fbneo'].forEach(function(id) {
+    const el = document.getElementById('pack-' + id);
+    if (el) el.className = (pack === id) ? 'primary' : '';
+  });
+  document.getElementById('datsStatus').textContent = 'Chargement du catalogue ' + pack + '…';
+  document.getElementById('datsList').innerHTML = '';
+  try {
+    const data = await api('/api/dats/catalog?pack=' + encodeURIComponent(pack));
+    if (data.error) { document.getElementById('datsStatus').textContent = data.error; return; }
+    DAT_ITEMS = data.items || [];
+    const noRemote = (pack === 'mameredump' || pack === 'mame' || pack === 'fbneo');
+    if (!DAT_ITEMS.length && noRemote) {
+      document.getElementById('datsStatus').textContent =
+        data.label + ' — aucun DAT local. Cliquez « Tout télécharger » pour récupérer le pack.';
+    } else {
+      document.getElementById('datsStatus').textContent =
+        data.label + ' — ' + (data.count || DAT_ITEMS.length) + ' DAT disponibles';
+    }
+    renderDatsList();
+  } catch (e) {
+    document.getElementById('datsStatus').textContent = 'Erreur : ' + e;
+  }
+}
+
+function renderDatsList() {
+  const q = (document.getElementById('datsSearch').value || '').trim().toLowerCase();
+  const list = document.getElementById('datsList');
+  const rows = DAT_ITEMS.filter(it => !q || it.name.toLowerCase().includes(q) || (it.file || '').toLowerCase().includes(q) || (it.version || '').toLowerCase().includes(q));
+  if (!rows.length) {
+    list.innerHTML = '<div class="modal-item" style="color:var(--text2)">Aucun resultat — utilisez « Tout telecharger » si besoin</div>';
+    return;
+  }
+  list.innerHTML = rows.map(it => {
+    const f = it.file || '';
+    const isLocal = it.local === '1' || f.indexOf('/') === 0 || /^[A-Za-z]:[\\/]/.test(f);
+    const action = isLocal ? 'Charger' : 'Telecharger';
+    return '<div class="modal-item" onclick="downloadOne(\'' + escAttr(it.file) + '\')">' +
+      '<span class="icon">📄</span><div style="flex:1;min-width:0">' +
+      '<div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(it.name) + '</div>' +
+      '<div style="font-size:11px;color:var(--text2)">' + esc(it.version || '') + '</div></div>' +
+      '<span style="font-size:11px;color:var(--accent)">' + action + '</span></div>';
+  }).join('');
+}
+
+async function downloadOne(file) {
+  document.getElementById('datsStatus').textContent = 'Telechargement de ' + file + ' (pack mis en cache si besoin)…';
+  showLoading('Telechargement DAT…', file);
+  try {
+    const data = await api('/api/dats/download_one', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pack: DAT_PACK, file }) });
+    if (data.error) { toast(data.error, false); document.getElementById('datsStatus').textContent = data.error; return; }
+    document.getElementById('datPath').value = data.path;
+    document.getElementById('datsStatus').textContent = 'OK → ' + data.path;
+    toast('DAT prêt : ' + data.file);
+    await loadDat();
+  } catch (e) { toast(String(e), false); }
+  finally { hideLoading(); }
+}
+
+async function downloadPack() {
+  const labels = {nointro:'No-Intro (~100 Mo)', redump:'Redump (~30 Mo)', mameredump:'MAMERedump (repo GitHub, peut etre volumineux)', mame:'MAME DATs (repo GitHub)', fbneo:'FBNeo DATs (repo GitHub)'};
+  const hint = labels[DAT_PACK] || DAT_PACK;
+  if (!confirm('Telecharger le pack ' + hint + ' ?\nLes DAT seront extraits dans dat/' + DAT_PACK + '/')) return;
+  document.getElementById('datsStatus').textContent = 'Telechargement du pack complet en cours…';
+  showLoading('Telechargement du pack ' + DAT_PACK + '…', 'Cela peut prendre plusieurs minutes');
+  try {
+    const data = await api('/api/dats/download_pack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pack: DAT_PACK }) });
+    if (data.error) { toast(data.error, false); document.getElementById('datsStatus').textContent = data.error; return; }
+    document.getElementById('datsStatus').textContent = data.label + ' : ' + data.extracted + ' DAT extraits → ' + data.dir;
+    toast(data.extracted + ' DAT installés');
+    await setPack(DAT_PACK);
+  } catch (e) { toast(String(e), false); }
+  finally { hideLoading(); }
+}
+
+async function loadLocalDats() {
+  document.getElementById('datsStatus').textContent = 'DAT locaux…';
+  try {
+    const data = await api('/api/dats/local');
+    if (data.error) { document.getElementById('datsStatus').textContent = data.error; return; }
+    DAT_ITEMS = (data.dats || []).map(d => ({ name: d.name, version: d.rel, file: d.path, _local: true }));
+    document.getElementById('datsStatus').textContent = DAT_ITEMS.length + ' DAT locaux';
+    const list = document.getElementById('datsList');
+    if (!DAT_ITEMS.length) { list.innerHTML = '<div class="modal-item" style="color:var(--text2)">Aucun DAT dans dat/</div>'; return; }
+    list.innerHTML = DAT_ITEMS.map(it => '<div class="modal-item" onclick="pickLocalDat(\'' + escAttr(it.file) + '\')">' +
+      '<span class="icon">📁</span><div style="flex:1;min-width:0">' +
+      '<div style="font-weight:500">' + esc(it.name) + '</div>' +
+      '<div style="font-size:11px;color:var(--text2)">' + esc(it.version) + '</div></div>' +
+      '<span style="font-size:11px;color:var(--accent)">Charger</span></div>').join('');
+  } catch (e) { document.getElementById('datsStatus').textContent = String(e); }
+}
+
+function pickLocalDat(path) {
+  document.getElementById('datPath').value = path;
+  closeDatsModal();
+  loadDat();
+}
+
+document.getElementById('datsSearch').addEventListener('input', () => {
+  if (DAT_ITEMS.length && !DAT_ITEMS[0]._local) renderDatsList();
+});
+
+window.addEventListener('load', () => {
+  const p = document.getElementById('datPath').value;
+  if (p && !p.endsWith('/') && !p.endsWith('\\')) loadDat();
+});
+
+
+/* ========== Collection / Profils ========== */
+let APP_VIEW = 'scan';
+let PROFILES = [];
+let CURRENT_PROFILE = null;
+let PROF_SELECTED = new Set();
+
+function switchAppView(view) {
+  APP_VIEW = view === 'collection' ? 'collection' : 'scan';
+  document.body.classList.toggle('view-collection', APP_VIEW === 'collection');
+  const ts = document.getElementById('tabScan');
+  const tc = document.getElementById('tabCollection');
+  if (ts) ts.classList.toggle('active', APP_VIEW === 'scan');
+  if (tc) tc.classList.toggle('active', APP_VIEW === 'collection');
+  if (APP_VIEW === 'collection') {
+    loadProfilesList();
+  }
+}
+
+async function loadProfilesList() {
+  const box = document.getElementById('profCards');
+  if (!box) return;
+  box.innerHTML = '<div style="color:var(--text2)">…</div>';
+  try {
+    const data = await api('/api/profiles');
+    if (data.error) { box.innerHTML = '<div style="color:var(--red)">' + esc(data.error) + '</div>'; return; }
+    PROFILES = data.profiles || [];
+    if (!PROFILES.length) {
+      box.innerHTML = '<div style="color:var(--text2)">' + (t('prof.empty') || 'Aucun profil') + '</div>';
+      return;
+    }
+    box.innerHTML = PROFILES.map(function (p) {
+      const pct = p.total_games ? Math.round(100 * (p.total_good || 0) / p.total_games) : null;
+      return '<div class="prof-card" onclick="openProfile(\'' + esc(p.id).replace(/'/g, '') + '\')">' +
+        '<h3>🎮 ' + esc(p.name) + '</h3>' +
+        '<div class="meta">' + esc(p.root || '') + '</div>' +
+        '<div class="stats">' +
+          '<span>' + (p.systems_count || 0) + ' ' + (t('prof.systems') || 'systèmes') + '</span>' +
+          (p.scanned_count ? '<span>' + p.scanned_count + ' scannés</span>' : '') +
+          (p.total_games ? '<span>' + p.total_games + ' jeux</span>' : '') +
+          (pct !== null ? '<span>' + pct + '% good</span>' : '') +
+          (p.updated_at ? '<span>' + esc(p.updated_at) + '</span>' : '') +
+        '</div></div>';
+    }).join('');
+  } catch (e) {
+    box.innerHTML = '<div style="color:var(--red)">' + esc(String(e)) + '</div>';
+  }
+}
+
+function openNewProfile() {
+  const m = document.getElementById('profModal');
+  if (m) m.classList.add('open');
+  const n = document.getElementById('profName');
+  if (n && !n.value) n.value = 'RetroBat';
+}
+
+function closeProfModal() {
+  const m = document.getElementById('profModal');
+  if (m) m.classList.remove('open');
+}
+
+async function browseProfRoot() {
+  // réutilise le browser en mode roms, puis récupère le dossier
+  // astuce : ouvrir browser et à la sélection écrire dans profRoot
+  window._profBrowse = true;
+  await openBrowser('roms');
+}
+
+// Hook selectBrowserPath / close for profile root
+const _origSelectBrowserPath = typeof selectBrowserPath === 'function' ? selectBrowserPath : null;
+
+async function createProfile() {
+  const name = (document.getElementById('profName').value || '').trim() || 'RetroBat';
+  const root = (document.getElementById('profRoot').value || '').trim();
+  const type = document.getElementById('profType').value || 'retrobat';
+  const detect = document.getElementById('profDetect').checked;
+  const st = document.getElementById('profCreateStatus');
+  if (!root) {
+    if (st) st.textContent = t('prof.need_root') || 'Indiquez la racine RetroBat';
+    return;
+  }
+  if (st) st.textContent = (t('prof.creating') || 'Création…');
+  showLoading(t('prof.creating') || 'Création du profil…', root);
+  try {
+    const data = await api('/api/profiles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, root: root, type: type, detect: detect })
+    });
+    if (data.error) {
+      if (st) st.textContent = data.error;
+      toast(data.error, false);
+      return;
+    }
+    closeProfModal();
+    toast((t('prof.created') || 'Profil créé') + ' — ' + (data.profile.systems || []).length + ' systèmes');
+    await openProfile(data.profile.id);
+  } catch (e) {
+    if (st) st.textContent = String(e);
+    toast(String(e), false);
+  } finally {
+    hideLoading();
+  }
+}
+
+async function openProfile(id) {
+  showLoading(t('loading.default') || '…', id);
+  try {
+    const data = await api('/api/profiles/' + encodeURIComponent(id));
+    if (data.error) { toast(data.error, false); return; }
+    CURRENT_PROFILE = data.profile;
+    PROF_SELECTED = new Set();
+    document.getElementById('profListPanel').style.display = 'none';
+    document.getElementById('profDetailPanel').style.display = '';
+    document.getElementById('profDetailTitle').textContent = CURRENT_PROFILE.name || id;
+    renderProfSummary(data.summary);
+    renderProfSystems();
+    switchAppView('collection');
+  } catch (e) {
+    toast(String(e), false);
+  } finally {
+    hideLoading();
+  }
+}
+
+function backToProfList() {
+  CURRENT_PROFILE = null;
+  document.getElementById('profDetailPanel').style.display = 'none';
+  document.getElementById('profListPanel').style.display = '';
+  loadProfilesList();
+}
+
+function renderProfSummary(summary) {
+  const bar = document.getElementById('profStatsBar');
+  if (!bar) return;
+  const s = summary || {};
+  const c = s.counts || {};
+  bar.innerHTML =
+    '<div class="prof-stat"><b>' + (s.systems_enabled || 0) + '</b><span>' + (t('prof.systems') || 'Systèmes') + '</span></div>' +
+    '<div class="prof-stat"><b>' + (c.total || 0) + '</b><span>Jeux</span></div>' +
+    '<div class="prof-stat"><b>' + (s.pct_good || 0) + '%</b><span>Good</span></div>' +
+    '<div class="prof-stat"><b>' + (c.missing || 0) + '</b><span>Missing</span></div>' +
+    '<div class="prof-stat"><b>' + ((c.rename || 0) + (c.incomplete || 0)) + '</b><span>À fixer</span></div>' +
+    '<div class="prof-stat"><b>' + (c.bad || 0) + '</b><span>Bad</span></div>';
+}
+
+function renderProfSystems() {
+  const body = document.getElementById('profSysBody');
+  if (!body || !CURRENT_PROFILE) return;
+  const filter = ((document.getElementById('profSysFilter') || {}).value || '').toLowerCase();
+  const onlyMiss = (document.getElementById('profOnlyMissing') || {}).checked;
+  const systems = CURRENT_PROFILE.systems || [];
+  let html = '';
+  let visible = 0;
+  for (let i = 0; i < systems.length; i++) {
+    const s = systems[i];
+    if (s.enabled === false && (s.dat_status === 'skip')) {
+      // still show but dim
+    }
+    const name = (s.fullname || s.id || '');
+    const blob = (s.id + ' ' + name + ' ' + (s.path || '') + ' ' + (s.dat_name || s.dat || '')).toLowerCase();
+    if (filter && blob.indexOf(filter) < 0) continue;
+    const lc = s.last_counts || null;
+    const miss = lc ? (lc.missing || 0) : 0;
+    if (onlyMiss && !(lc && miss > 0)) continue;
+    visible++;
+    const checked = PROF_SELECTED.has(s.id) ? 'checked' : '';
+    const datSt = s.dat_status || (s.dat ? 'ok' : 'missing');
+    const datLabel = s.dat_name || (s.dat ? s.dat.split(/[/\\]/).pop() : '—');
+    const pathShort = (s.path || '').replace(/^.*[\\/]roms[\\/]/i, 'roms/');
+    html += '<tr data-sid="' + esc(s.id) + '">';
+    html += '<td><input type="checkbox" ' + checked + ' onchange="toggleProfSys(\'' + esc(s.id).replace(/'/g, '') + '\', this.checked)"></td>';
+    html += '<td><b>' + esc(s.id) + '</b><div style="font-size:11px;color:var(--text2)">' + esc(name) + '</div></td>';
+    html += '<td class="mono" style="font-size:11px" title="' + esc(s.path || '') + '">' + esc(pathShort || s.path || '—') + '</td>';
+    const manualMark = s.dat_manual ? ' ✎' : '';
+    html += '<td style="font-size:11px" class="prof-dat-cell" title="' + esc(s.dat || '') + ' — ' + esc(t('prof.click_dat') || 'Cliquer pour changer le DAT') + '">' +
+      '<a href="#" class="prof-dat-link dat-st-' + datSt + '" onclick="event.preventDefault();changeDatForSystem(\'' + String(s.id).replace(/\\/g,'\\\\').replace(/'/g, "\\'") + '\')">' +
+      esc(datLabel) + manualMark + '</a></td>';
+    if (lc) {
+      html += '<td>' + (lc.total || 0) + '</td>';
+      html += '<td style="color:var(--green)">' + (lc.good || 0) + '</td>';
+      html += '<td style="color:var(--red)">' + (lc.missing || 0) + '</td>';
+      html += '<td>' + (lc.bad || 0) + '</td>';
+      html += '<td>' + ((lc.rename || 0) + (lc.incomplete || 0)) + '</td>';
+      html += '<td style="font-size:11px;color:var(--text2)">' + esc((s.last_scan || '').replace('T', ' ').slice(0, 16)) + '</td>';
+    } else {
+      html += '<td colspan="6" style="color:var(--text2);font-size:11px">—</td>';
+    }
+    html += '<td style="white-space:nowrap">';
+    html += '<button type="button" class="primary" style="padding:3px 8px;font-size:11px" onclick="scanOneSystem(\'' + esc(s.id).replace(/'/g, '') + '\')">Scan</button> ';
+    html += '<button type="button" style="padding:3px 8px;font-size:11px" onclick="openSystemInScan(\'' + esc(s.id).replace(/'/g, '') + '\')">Ouvrir</button>';
+    html += '</td></tr>';
+  }
+  body.innerHTML = html || '<tr><td colspan="11" style="color:var(--text2)">Aucun système</td></tr>';
+  const info = document.getElementById('profSelInfo');
+  if (info) info.textContent = PROF_SELECTED.size + ' sélectionné(s) · ' + visible + ' affiché(s)';
+}
+
+function toggleProfSys(id, on) {
+  if (on) PROF_SELECTED.add(id);
+  else PROF_SELECTED.delete(id);
+  const info = document.getElementById('profSelInfo');
+  if (info) info.textContent = PROF_SELECTED.size + ' sélectionné(s)';
+}
+
+function toggleProfCheckAll(on) {
+  if (!CURRENT_PROFILE) return;
+  const systems = CURRENT_PROFILE.systems || [];
+  PROF_SELECTED = new Set();
+  if (on) systems.forEach(function (s) { if (s.enabled !== false) PROF_SELECTED.add(s.id); });
+  renderProfSystems();
+}
+
+async function scanOneSystem(systemId) {
+  if (!CURRENT_PROFILE) return;
+  showLoading((t('loading.scan') || 'Scan…') + ' ' + systemId, CURRENT_PROFILE.name || '');
+  try {
+    const max_depth = typeof getScanMaxDepth === 'function' ? getScanMaxDepth() : 0;
+    const data = await api('/api/profiles/' + encodeURIComponent(CURRENT_PROFILE.id) + '/scan_system', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ system_id: systemId, max_depth: max_depth })
+    });
+    if (data.error) { toast(data.error, false); return; }
+    CURRENT_PROFILE = data.profile;
+    renderProfSummary(data.summary);
+    renderProfSystems();
+    // Remplacer entièrement les résultats (pas de fusion avec l'ancien scan)
+    clearScanResults();
+    RESULTS = Array.isArray(data.results) ? data.results : [];
+    SELECTED = new Set();
+    INDEXED = [];
+    HASH_MODE = data.hash_mode || 'crc';
+    DAT_MODE = data.dat_mode || 'standard';
+    document.body.classList.toggle('arcade-mode', DAT_MODE === 'arcade');
+    const datEl = document.getElementById('datPath');
+    const romEl = document.getElementById('romsPath');
+    if (datEl) datEl.value = data.dat_path || '';
+    if (romEl) romEl.value = data.roms_path || '';
+    rebuildIndex();
+    if (data.counts) updateSummary(data.counts);
+    else updateSummary({ total: RESULTS.length });
+    renderTable();
+    const st = document.getElementById('statusText');
+    if (st) st.textContent = systemId + ' — ' + (data.counts && data.counts.total || RESULTS.length) + ' · ' + (data.dat_name || '');
+    toast((t('toast.scan_done') || 'Scan terminé') + ' (' + systemId + ')');
+  } catch (e) {
+    toast(String(e), false);
+  } finally {
+    hideLoading();
+  }
+}
+
+async function scanSelectedSystems() {
+  const ids = [...PROF_SELECTED];
+  if (!ids.length) return toast(t('prof.need_sel') || 'Sélectionnez au moins un système', false);
+  for (let i = 0; i < ids.length; i++) {
+    showLoading('Scan ' + (i + 1) + '/' + ids.length, ids[i]);
+    await scanOneSystem(ids[i]);
+  }
+}
+
+async function scanAllSystems() {
+  if (!CURRENT_PROFILE) return;
+  const ids = (CURRENT_PROFILE.systems || [])
+    .filter(function (s) { return s.enabled !== false && s.dat; })
+    .map(function (s) { return s.id; });
+  if (!ids.length) return toast(t('prof.nothing_to_scan') || 'Aucun système avec DAT', false);
+  PROF_SELECTED = new Set(ids);
+  await scanSelectedSystems();
+}
+
+
+async function changeDatForSystem(systemId) {
+  if (!CURRENT_PROFILE || !systemId) return;
+  window._profDatSystemId = systemId;
+  try {
+    await openBrowser('dat');
+  } catch (e) {
+    window._profDatSystemId = null;
+    toast(String(e), false);
+  }
+}
+
+async function applyProfileDat(systemId, datPath) {
+  if (!CURRENT_PROFILE || !systemId || !datPath) return;
+  showLoading(t('prof.saving_dat') || 'Enregistrement DAT…', systemId);
+  try {
+    const data = await api('/api/profiles/' + encodeURIComponent(CURRENT_PROFILE.id) + '/set_dat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ system_id: systemId, dat: datPath })
+    });
+    if (data.error) { toast(data.error, false); return; }
+    CURRENT_PROFILE = data.profile;
+    renderProfSummary(data.summary);
+    renderProfSystems();
+    const name = datPath.split(/[/\\]/).pop();
+    toast((t('prof.dat_saved') || 'DAT enregistré') + ' — ' + systemId + ' → ' + name);
+  } catch (e) {
+    toast(String(e), false);
+  } finally {
+    hideLoading();
+  }
+}
+
+async function resetProfileDats() {
+  if (!CURRENT_PROFILE) return;
+  const msg = (t('prof.reset_dats_warn') ||
+    'Réinitialiser tous les DAT du profil ?\\n\\nLes associations manuelles seront écrasées par les suggestions automatiques.\\nLes résultats de scan liés seront effacés.')
+    .replace(/\\n/g, '\n');
+  if (!confirm(msg)) return;
+  showLoading(t('prof.resetting_dats') || 'Réinitialisation des DAT…', CURRENT_PROFILE.name || '');
+  try {
+    const data = await api('/api/profiles/' + encodeURIComponent(CURRENT_PROFILE.id) + '/reset_dats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    if (data.error) { toast(data.error, false); return; }
+    CURRENT_PROFILE = data.profile;
+    renderProfSummary(data.summary);
+    renderProfSystems();
+    toast((t('prof.dats_reset') || 'DAT réinitialisés') +
+      ' — ' + (data.changed || 0) + ' ' + (t('prof.updated') || 'mis à jour'));
+  } catch (e) {
+    toast(String(e), false);
+  } finally {
+    hideLoading();
+  }
+}
+
+async function openSystemInScan(systemId) {
+  if (!CURRENT_PROFILE) return;
+  const s = (CURRENT_PROFILE.systems || []).find(function (x) { return x.id === systemId; });
+  if (!s) return;
+  const datEl = document.getElementById('datPath');
+  const romEl = document.getElementById('romsPath');
+  if (datEl && s.dat) datEl.value = s.dat;
+  if (romEl && s.path) romEl.value = s.path;
+  switchAppView('scan');
+  if (s.dat) {
+    try { await loadDat(); } catch (e) {}
+  }
+  // Si déjà scanné dans STATE via scanOne, résultats déjà là
+}
+
+async function deleteCurrentProfile() {
+  if (!CURRENT_PROFILE) return;
+  if (!confirm((t('prof.confirm_delete') || 'Supprimer le profil') + ' « ' + CURRENT_PROFILE.name + ' » ?')) return;
+  try {
+    const data = await api('/api/profiles/' + encodeURIComponent(CURRENT_PROFILE.id), { method: 'DELETE' });
+    if (data.error) { toast(data.error, false); return; }
+    toast(t('prof.deleted') || 'Profil supprimé');
+    backToProfList();
+  } catch (e) {
+    toast(String(e), false);
+  }
+}
+
+
+// boot i18n
+loadSubdirsPrefs();
+loadI18n(LANG);
+</script>
+</body>
+</html>
