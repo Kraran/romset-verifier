@@ -22,25 +22,8 @@ if ! python3 -c "import flask, lxml" 2>/dev/null; then
   pip3 install --user flask lxml
 fi
 echo "  [OK] Flask + lxml"
-
-if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
-  echo "  [OK] Node.js trouvé — mode Electron natif"
-  if [ ! -d node_modules/electron ]; then
-    echo "  Installation d'Electron (première fois)…"
-    npm install
-  fi
-  echo ""
-  echo "  Démarrage de l'application native…"
-  echo ""
-  exec npx electron .
-fi
-
-echo "  [!] Node.js / npm non trouvés — mode navigateur"
 echo ""
-echo "  Pour Electron plus tard : installez Node.js LTS"
-echo "    https://nodejs.org/"
-echo ""
-echo "  Démarrage du serveur local (http://127.0.0.1:8080)"
-echo "  Ctrl+C pour arrêter."
+echo "  Démarrage — fenêtre application si Chrome / Chromium / Edge / Brave."
+echo "  Fermez la fenêtre, Ctrl+C ou ⏻ Quitter pour arrêter."
 echo ""
 exec python3 rom_verifier.py --open

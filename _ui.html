@@ -55,6 +55,47 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 .pill.bad { color: var(--red); border-color: #da3633; }
 .pill.missing { color: var(--grey); }
 .pill.total { color: var(--accent); border-color: var(--accent); }
+.kw-bar {
+  display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px;
+  padding: 8px 16px 10px; border-bottom: 1px solid var(--border);
+  background: var(--bg2); flex-shrink: 0;
+}
+.kw-bar.hidden { display: none; }
+.kw-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%;
+}
+.kw-head label {
+  font-size: 12px; font-weight: 600; color: var(--text2);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.kw-head .kw-hint { font-size: 11px; color: var(--text2); opacity: .85; }
+.kw-head input.kw-search {
+  margin-left: auto; max-width: 180px; flex: 1; min-width: 120px;
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; padding: 4px 8px; font-size: 12px;
+}
+.kw-chips {
+  display: flex; flex-wrap: wrap; gap: 5px; max-height: 96px; overflow-y: auto;
+  width: 100%; padding-top: 2px;
+}
+.kw-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  background: var(--bg3); border: 1px solid var(--border); color: var(--text2);
+  cursor: pointer; user-select: none; line-height: 1.3;
+}
+.kw-chip:hover { border-color: var(--accent); color: var(--text); }
+.kw-chip.include {
+  color: var(--green); border-color: #238636; background: #23863622;
+}
+.kw-chip.exclude {
+  color: var(--red); border-color: #da3633; background: #da363322;
+  text-decoration: line-through; text-decoration-color: rgba(218,54,51,.55);
+}
+.kw-chip .kw-mode { font-size: 9px; opacity: .75; font-weight: 700; }
+.kw-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.kw-actions button { font-size: 11px; padding: 3px 8px; }
+
 .summary .status-text { margin-left: auto; font-size: 12px; color: var(--text2); }
 .toolbar { display: flex; gap: 8px; padding: 8px 16px; background: var(--bg2); border-bottom: 1px solid var(--border); flex-shrink: 0; align-items: center; }
 .toolbar input { flex: 1; max-width: 320px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius); padding: 6px 10px; font-size: 13px; }
@@ -65,6 +106,7 @@ button:disabled { opacity: .4; cursor: not-allowed; }
 table.results { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
 table.results thead { position: sticky; top: 0; z-index: 5; }
 table.results th {
+  position: relative;
   background: var(--bg3); border-bottom: 2px solid var(--border); border-right: 1px solid var(--border);
   padding: 0; text-align: left; font-weight: 600; font-size: 11px; text-transform: uppercase;
   letter-spacing: .03em; color: var(--text2); user-select: none; white-space: nowrap;
@@ -246,14 +288,96 @@ body.loading-active * { cursor: wait !important; }
 .toast.show { opacity: 1; }
 .toast.ok { border-color: var(--green); }
 .toast.err { border-color: var(--red); }
-.modal-danger { border-color: var(--red); box-shadow: 0 0 0 1px var(--red), 0 16px 48px rgba(0,0,0,.5); }
-.modal-danger .modal-header { background: #da363322; border-bottom-color: var(--red); }
-.modal-danger .modal-header h3 { color: var(--red); }
-.modal-danger .warn-body { padding: 16px; font-size: 14px; line-height: 1.5; }
-.modal-danger .warn-body strong { color: var(--red); }
-.modal-danger .modal-footer { border-top-color: #da363355; }
-button.danger { background: #da3633; border-color: #da3633; color: #fff; font-weight: 600; }
-button.danger:hover { background: #f85149; border-color: #f85149; }
+/* Confirm / warning — look Gamelist Media Editor */
+.modal-danger {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.35);
+  background: var(--bg2);
+  padding: 0;
+  overflow: hidden;
+}
+.modal-danger.gme-confirm {
+  width: min(440px, 94vw);
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.modal-danger.gme-confirm .modal-header {
+  display: none; /* titre intégré dans le corps style GME */
+}
+.modal-danger.gme-confirm .gme-confirm-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0 0 10px;
+  color: var(--red, #ff6b6b);
+  line-height: 1.3;
+}
+.modal-danger.gme-confirm .warn-body {
+  padding: 0;
+  font-size: 0.88rem;
+  color: var(--text2);
+  line-height: 1.45;
+}
+.modal-danger.gme-confirm .warn-body p {
+  margin: 0 0 8px;
+  color: var(--text2);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+.modal-danger.gme-confirm .warn-body p:last-child { margin-bottom: 0; }
+.modal-danger.gme-confirm .warn-body strong { color: var(--red, #ff6b6b); }
+.modal-danger.gme-confirm .warn-body ul {
+  font-size: 0.85rem;
+  color: var(--text2);
+  margin: 0 0 12px 18px;
+  line-height: 1.5;
+}
+.modal-danger.gme-confirm .modal-footer,
+.modal-danger.gme-confirm .modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 18px;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+.modal-danger.gme-confirm .modal-actions button,
+.modal-danger.gme-confirm .modal-footer button {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.modal-danger.gme-confirm .modal-actions button:hover,
+.modal-danger.gme-confirm .modal-footer button:hover {
+  background: var(--border);
+}
+button.danger,
+.modal-danger.gme-confirm button.danger,
+.btn-danger {
+  background: transparent;
+  border: 1px solid rgba(255, 107, 107, 0.45);
+  color: var(--red, #ff6b6b);
+  font-weight: 600;
+}
+button.danger:hover,
+.modal-danger.gme-confirm button.danger:hover,
+.btn-danger:hover {
+  background: rgba(255, 107, 107, 0.2);
+  border-color: var(--red, #ff6b6b);
+  color: var(--red, #ff6b6b);
+}
+#confirmModal.modal-bg {
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 1000;
+  padding: 16px;
+}
 .modal-report { width: 440px; }
 .modal-report .modal-header h3 { color: var(--accent); }
 .report-body { padding: 16px; font-size: 13px; line-height: 1.55; max-height: 50vh; overflow-y: auto; }
@@ -285,6 +409,27 @@ button.danger:hover { background: #f85149; border-color: #f85149; }
 .col-mtype { width: 90px; }
 .col-bios { width: 90px; }
 .col-drv { width: 100px; }
+/* Redimensionnement colonnes (glisser le bord droit de l'entête) */
+.col-resize-handle {
+  position: absolute;
+  top: 0; right: -3px;
+  width: 7px; height: 100%;
+  cursor: col-resize;
+  z-index: 6;
+  user-select: none;
+}
+.col-resize-handle:hover,
+.col-resize-handle.active {
+  background: var(--accent);
+  opacity: 0.45;
+}
+body.col-resizing {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+body.col-resizing * { cursor: col-resize !important; }
+table.results th.resizable-col { min-width: 60px; }
+
 th.arcade-only, td.arcade-only { display: none; }
 .dats-tab {
   background: transparent; border: none; color: var(--text2);
@@ -583,7 +728,7 @@ body.arcade-mode th.arcade-only, body.arcade-mode td.arcade-only { display: tabl
   <h1>
     <button type="button" class="brand-btn" id="btnAbout" onclick="openAbout()" title="À propos" data-i18n-title="about.open_title">
       <img src="/icon-32.png" alt="" class="app-logo" width="28" height="28">
-      <span><span>RomSet</span> Verifier <small style="color:var(--text2);font-weight:400;font-size:11px">v1.0.0-beta</small></span>
+      <span><span>RomSet</span> Verifier <small style="color:var(--text2);font-weight:400;font-size:11px">v1.1.0-beta</small></span>
     </button>
   </h1>
   <div class="paths">
@@ -714,6 +859,18 @@ body.arcade-mode th.arcade-only, body.arcade-mode td.arcade-only { display: tabl
   <span class="status-text" id="statusText" data-i18n="status.ready">Chargez un DAT puis scannez un dossier</span>
 </div>
 
+<div class="kw-bar hidden" id="kwBar">
+  <div class="kw-head">
+    <label data-i18n="filter.keywords">Mots-clés DAT</label>
+    <span class="kw-hint" data-i18n="filter.keywords_hint">Clic : inclure → exclure → off · combinables</span>
+    <input type="search" class="kw-search" id="kwSearch" placeholder="Filtrer les tags…" data-i18n-placeholder="filter.keywords_search" oninput="renderKeywordChips()">
+    <div class="kw-actions">
+      <button type="button" onclick="clearKeywordFilters()" data-i18n="filter.keywords_clear">Effacer tags</button>
+    </div>
+  </div>
+  <div class="kw-chips" id="kwChips"></div>
+</div>
+
 <div class="toolbar">
   <input id="search" type="search" placeholder="Recherche globale…" data-i18n-placeholder="filter.search">
   <button type="button" onclick="clearFilters()" data-i18n="filter.clear">Effacer filtres</button>
@@ -738,14 +895,14 @@ body.arcade-mode th.arcade-only, body.arcade-mode td.arcade-only { display: tabl
             <div class="th-inner" onclick="onHeaderClick(event,'status')"><span>État</span><span class="sort-ico"></span><span class="filter-ico">▾</span></div>
             <input class="col-filter" data-col="status" placeholder="Filtrer…" data-i18n-placeholder="filter.col" oninput="onColFilter()" onclick="event.stopPropagation()">
           </th>
-          <th class="col-expected" data-col="expected">
+          <th class="col-expected resizable-col" data-col="expected">
             <div class="th-inner" onclick="onHeaderClick(event,'expected')"><span>Nom attendu</span><span class="sort-ico"></span><span class="filter-ico">▾</span></div>
             <input class="col-filter" data-col="expected" placeholder="Filtrer…" data-i18n-placeholder="filter.col" oninput="onColFilter()" onclick="event.stopPropagation()">
-          </th>
-          <th class="col-desc" data-col="description">
+          <span class="col-resize-handle" data-resize-col="col-expected" title="Redimensionner"></span></th>
+          <th class="col-desc resizable-col" data-col="description">
             <div class="th-inner" onclick="onHeaderClick(event,'description')"><span>Nom complet</span><span class="sort-ico"></span><span class="filter-ico">▾</span></div>
             <input class="col-filter" data-col="description" placeholder="Filtrer…" data-i18n-placeholder="filter.col" oninput="onColFilter()" onclick="event.stopPropagation()">
-          </th>
+          <span class="col-resize-handle" data-resize-col="col-desc" title="Redimensionner"></span></th>
           <th class="col-parent arcade-only" data-col="parent">
             <div class="th-inner" onclick="onHeaderClick(event,'parent')"><span>Parent / Clone</span><span class="sort-ico"></span><span class="filter-ico">▾</span></div>
             <input class="col-filter" data-col="parent" placeholder="Filtrer…" data-i18n-placeholder="filter.col" oninput="onColFilter()" onclick="event.stopPropagation()">
@@ -762,14 +919,14 @@ body.arcade-mode th.arcade-only, body.arcade-mode td.arcade-only { display: tabl
             <div class="th-inner" onclick="onHeaderClick(event,'driver_status')"><span>Status</span><span class="sort-ico"></span><span class="filter-ico">▾</span></div>
             <input class="col-filter" data-col="driver_status" placeholder="Filtrer…" data-i18n-placeholder="filter.col" oninput="onColFilter()" onclick="event.stopPropagation()">
           </th>
-          <th class="col-zip" data-col="zip">
+          <th class="col-zip resizable-col" data-col="zip">
             <div class="th-inner" onclick="onHeaderClick(event,'zip')"><span>ZIP / Fichier</span><span class="sort-ico"></span><span class="filter-ico">▾</span></div>
             <input class="col-filter" data-col="zip" placeholder="Filtrer…" data-i18n-placeholder="filter.col" oninput="onColFilter()" onclick="event.stopPropagation()">
-          </th>
-          <th class="col-rom" data-col="rom">
+          <span class="col-resize-handle" data-resize-col="col-zip" title="Redimensionner"></span></th>
+          <th class="col-rom resizable-col" data-col="rom">
             <div class="th-inner" onclick="onHeaderClick(event,'rom')"><span>ROM (membre)</span><span class="sort-ico"></span><span class="filter-ico">▾</span></div>
             <input class="col-filter" data-col="rom" placeholder="Filtrer…" data-i18n-placeholder="filter.col" oninput="onColFilter()" onclick="event.stopPropagation()">
-          </th>
+          <span class="col-resize-handle" data-resize-col="col-rom" title="Redimensionner"></span></th>
           <th class="col-size" data-col="size">
             <div class="th-inner" onclick="onHeaderClick(event,'size')"><span>Taille</span><span class="sort-ico"></span><span class="filter-ico">▾</span></div>
             <input class="col-filter" data-col="size" placeholder="Filtrer…" data-i18n-placeholder="filter.col" oninput="onColFilter()" onclick="event.stopPropagation()">
@@ -996,16 +1153,13 @@ body.arcade-mode th.arcade-only, body.arcade-mode td.arcade-only { display: tabl
   </div>
 </div>
 
-<div class="modal-bg" id="confirmModal">
-  <div class="modal modal-danger" style="width:420px">
-    <div class="modal-header">
-      <h3 id="confirmTitle">⚠ Confirmation</h3>
-      <button type="button" onclick="closeConfirm(false)">✕</button>
-    </div>
+<div class="modal-bg" id="confirmModal" onclick="if(event.target===this)closeConfirm(false)">
+  <div class="modal modal-danger gme-confirm" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <h3 class="gme-confirm-title" id="confirmTitle">Confirmer</h3>
     <div class="warn-body" id="confirmBody"></div>
-    <div class="modal-footer">
-      <button type="button" onclick="closeConfirm(false)" data-i18n="confirm.cancel">Annuler</button>
-      <button type="button" class="danger" id="confirmOkBtn" data-i18n="confirm.delete" onclick="closeConfirm(true)">Supprimer</button>
+    <div class="modal-actions">
+      <button type="button" id="confirmCancelBtn" onclick="closeConfirm(false)" data-i18n="confirm.cancel">Annuler</button>
+      <button type="button" class="danger btn-danger" id="confirmOkBtn" data-i18n="confirm.ok" onclick="closeConfirm(true)">Confirmer</button>
     </div>
   </div>
 </div>
@@ -1307,7 +1461,14 @@ async function runRezip() {
   const max_depth = (sub && sub.checked) ? 2 : 0;
   const levelEl = document.getElementById('toolsRezipLevel');
   const compresslevel = levelEl ? parseInt(levelEl.value || '9', 10) : 9;
-  if (!confirm('Recompresser tous les .zip de\n' + path + '\n\nLes fichiers seront réécrits. Continuer ?')) return;
+  {
+    const ok = await openConfirm(
+      t('tools.rezip_title') || 'Recompression',
+      ((t('tools.rezip_confirm') || 'Recompresser tous les .zip de\n{path}\n\nLes fichiers seront réécrits. Continuer ?').replace('{path}', path)),
+      t('confirm.ok') || 'Confirmer'
+    );
+    if (!ok) return;
+  }
 
   showLoading('Recompression ZIP…', 'Listage de ' + path);
 
@@ -1418,6 +1579,10 @@ let STATUS_FILTER = 'all';
 let SORT = { col: 'expected', dir: 'asc' };
 let COL_FILTERS = { status: '', zip: '', rom: '', expected: '', description: '', size: '', hash: '', parent: '', mtype: '', bios: '', driver_status: '' };
 let FILTER_OPEN = null;
+/** Tags extraits des noms DAT — mode par tag: '' | 'include' | 'exclude' */
+let KW_ALL = [];
+let KW_MODE = {};
+
 
 const ST_LABEL = {
   good: 'Good', rename: 'Rename', bad: 'Bad',
@@ -1514,6 +1679,199 @@ function applyRowPatches(rows) {
   INDEXED = [];
 }
 
+
+/** Extrait les mots-clés type No-Intro / Redump : (USA), (Europe), [Unl], etc. */
+/** Tags bruit : versions, dates, codes, lettres+chiffres, combinaisons. */
+function isIgnorableDatTag(tag) {
+  const t = String(tag || '').trim();
+  if (!t) return true;
+  const s = t.toLowerCase();
+
+  // Listes / combinaisons explicites
+  if (t.indexOf(',') !== -1) return true;
+  if (t.indexOf('+') !== -1) return true;
+  if (t.indexOf('/') !== -1 && !/^(ntsc|pal)/i.test(t)) return true;
+
+  // Dates
+  if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(s)) return true;
+  if (/^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}$/.test(s)) return true;
+  if (/^\d{8}$/.test(s)) return true;
+  if (/^\d{4}$/.test(s) && +s >= 1970 && +s <= 2099) return true;
+
+  // Chiffres seuls
+  if (/^\d+$/.test(s)) return true;
+
+  // Toute combinaison lettres + chiffres (fk8380, Rev 1, 2003SR7416, v1.02…)
+  if (/[a-z]/i.test(t) && /\d/.test(t)) return true;
+
+  // Versions purement numériques à points
+  if (/^\d+([.\-_]\d+)+$/.test(s)) return true;
+  if (/^rc\s*$/i.test(s)) return true;
+
+  if (s.length === 1) return true;
+  return false;
+}
+
+function extractDatTags(name) {
+  const tags = [];
+  const seen = Object.create(null);
+  const s = String(name || '');
+  const re = /\(([^)]+)\)|\[([^\]]+)\]/g;
+  let m;
+  while ((m = re.exec(s))) {
+    const raw = String(m[1] || m[2] || '').trim();
+    if (!raw || raw.length > 48) continue;
+    const add = function (label) {
+      if (!label || isIgnorableDatTag(label)) return;
+      const k = label.toLowerCase();
+      if (seen[k]) return;
+      seen[k] = true;
+      tags.push(label);
+    };
+    if (/[,+/]/.test(raw)) {
+      raw.split(/[,+/]/).forEach(function (part) { add(part.trim()); });
+    } else {
+      add(raw);
+    }
+  }
+  return tags;
+}
+
+/** true si `tag` contient un autre tag plus court comme mot entier (ex. "USA Virtual Console" ⊃ "USA"). */
+function isCompoundOfShorterTag(tag, allLabels) {
+  if (!/[\s_\-]/.test(tag)) return false;
+  const lower = String(tag).toLowerCase();
+  for (let i = 0; i < allLabels.length; i++) {
+    const other = allLabels[i];
+    if (!other || other.length >= tag.length) continue;
+    if (other.toLowerCase() === lower) continue;
+    const o = other.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp('(^|[\\s_\\-])' + o + '([\\s_\\-]|$)');
+    if (re.test(lower)) return true;
+  }
+  return false;
+}
+
+function rebuildKeywordList() {
+  const freq = Object.create(null);
+  const display = Object.create(null);
+  for (let i = 0; i < INDEXED.length; i++) {
+    const tags = INDEXED[i]._tags || [];
+    for (let j = 0; j < tags.length; j++) {
+      const t = tags[j];
+      const k = t.toLowerCase();
+      freq[k] = (freq[k] || 0) + 1;
+      if (!display[k]) display[k] = t;
+    }
+  }
+  // Drop compounds that already contain a simpler tag (e.g. "USA Virtual Console")
+  const labels = Object.keys(freq).map(function (k) { return display[k]; });
+  labels.forEach(function (label) {
+    if (isCompoundOfShorterTag(label, labels)) {
+      delete freq[label.toLowerCase()];
+      delete display[label.toLowerCase()];
+    }
+  });
+  const keep = Object.create(null);
+  Object.keys(freq).forEach(function (k) { keep[k] = true; });
+  for (let i = 0; i < INDEXED.length; i++) {
+    const row = INDEXED[i];
+    if (!row._tags || !row._tags.length) continue;
+    const next = [];
+    for (let j = 0; j < row._tags.length; j++) {
+      const t = row._tags[j];
+      if (keep[t.toLowerCase()]) next.push(t);
+    }
+    row._tags = next;
+    row._tagsLower = next.map(function (x) { return x.toLowerCase(); });
+  }
+  const PRIORITY = {
+    world: 1, usa: 2, europe: 3, japan: 4, asia: 5, korea: 6, australia: 7, brazil: 8, china: 9, spain: 10, germany: 11, france: 12, italy: 13, sweden: 14, netherlands: 15,
+    'usa, europe': 16, 'europe, australia': 17,
+    en: 20, fr: 21, de: 22, es: 23, it: 24, nl: 25, pt: 26, sv: 27, no: 28, da: 29, fi: 30, pl: 31, ru: 32, ja: 33, ko: 34, zh: 35,
+    pal: 40, ntsc: 41, 'ntsc-j': 42, 'ntsc-u': 43,
+    unl: 50, aftermarket: 51, digital: 52, homebrew: 53, proto: 54, beta: 55, sample: 56, demo: 57, pirate: 58,
+
+  };
+  KW_ALL = Object.keys(freq).map(function (k) {
+    return { key: k, label: display[k], count: freq[k] };
+  }).sort(function (a, b) {
+    const pa = PRIORITY[a.key] || 1000;
+    const pb = PRIORITY[b.key] || 1000;
+    if (pa !== pb) return pa - pb;
+    return a.label.localeCompare(b.label, undefined, { sensitivity: 'base' });
+  });
+  Object.keys(KW_MODE).forEach(function (k) {
+    if (!freq[k]) delete KW_MODE[k];
+  });
+  renderKeywordChips();
+}
+
+function renderKeywordChips() {
+  const bar = document.getElementById('kwBar');
+  const box = document.getElementById('kwChips');
+  if (!bar || !box) return;
+  if (!KW_ALL.length) {
+    bar.classList.add('hidden');
+    box.innerHTML = '';
+    return;
+  }
+  bar.classList.remove('hidden');
+  const q = ((document.getElementById('kwSearch') || {}).value || '').trim().toLowerCase();
+  const parts = [];
+  for (let i = 0; i < KW_ALL.length; i++) {
+    const item = KW_ALL[i];
+    if (q && item.label.toLowerCase().indexOf(q) === -1 && item.key.indexOf(q) === -1) continue;
+    const mode = KW_MODE[item.key] || '';
+    const cls = mode ? ('kw-chip ' + mode) : 'kw-chip';
+    const badge = mode === 'include' ? '<span class="kw-mode">+</span>' : (mode === 'exclude' ? '<span class="kw-mode">−</span>' : '');
+    parts.push(
+      '<button type="button" class="' + cls + '" data-kw="' + esc(item.key) + '" title="' + esc(item.label) + ' (' + item.count + ')" onclick="cycleKeywordFilter(this.dataset.kw)">' +
+      badge + esc(item.label) + ' <span style="opacity:.55;font-weight:500">' + item.count + '</span></button>'
+    );
+  }
+  box.innerHTML = parts.length ? parts.join('') : '<span class="kw-hint">' + (t('filter.keywords_none') || 'Aucun tag') + '</span>';
+}
+
+function cycleKeywordFilter(key) {
+  if (!key) return;
+  const cur = KW_MODE[key] || '';
+  if (!cur) KW_MODE[key] = 'include';
+  else if (cur === 'include') KW_MODE[key] = 'exclude';
+  else delete KW_MODE[key];
+  renderKeywordChips();
+  scheduleFilterRender();
+}
+
+function clearKeywordFilters() {
+  KW_MODE = {};
+  const inp = document.getElementById('kwSearch');
+  if (inp) inp.value = '';
+  renderKeywordChips();
+  scheduleFilterRender();
+}
+
+function rowMatchesKeywords(r) {
+  const modes = KW_MODE;
+  const keys = Object.keys(modes);
+  if (!keys.length) return true;
+  const tags = r._tagsLower || [];
+  let hasInclude = false;
+  let includeOk = false;
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys[i];
+    const mode = modes[k];
+    const hit = tags.indexOf(k) !== -1;
+    if (mode === 'exclude' && hit) return false;
+    if (mode === 'include') {
+      hasInclude = true;
+      if (hit) includeOk = true;
+    }
+  }
+  if (hasInclude && !includeOk) return false;
+  return true;
+}
+
 function rebuildIndex() {
   INDEXED = new Array(RESULTS.length);
   for (let idx = 0; idx < RESULTS.length; idx++) {
@@ -1535,15 +1893,19 @@ function rebuildIndex() {
     const message = r.message || '';
     const size = r.size || 0;
     const hashL = (hash || '').toLowerCase();
+    const tags = extractDatTags(expected);
     INDEXED[idx] = {
       status, zip, rom, expected, size, hash: hashL,
       parent: parentCol, mtype, bios, driver_status, description, message,
       _idx: idx,
       _sizeFmt: formatSize(size),
       _statusLabel: ST_LABEL[status] || status,
+      _tags: tags,
+      _tagsLower: tags.map(function (t) { return t.toLowerCase(); }),
       _search: (zip + ' ' + rom + ' ' + expected + ' ' + description + ' ' + bios + ' ' + hashL + ' ' + (ST_LABEL[status] || status) + ' ' + parentCol + ' ' + mtype + ' ' + message).toLowerCase()
     };
   }
+  rebuildKeywordList();
 }
 
 function getViewRows() {
@@ -1551,6 +1913,9 @@ function getViewRows() {
   if (STATUS_FILTER !== 'all') {
     const sf = STATUS_FILTER;
     rows = rows.filter(r => r.status === sf);
+  }
+  if (KW_MODE && Object.keys(KW_MODE).length) {
+    rows = rows.filter(rowMatchesKeywords);
   }
   for (const col in COL_FILTERS) {
     const v = (COL_FILTERS[col] || '').trim().toLowerCase();
@@ -1710,13 +2075,97 @@ function clearFilters() {
   STATUS_FILTER = 'all';
   COL_FILTERS = { status: '', zip: '', rom: '', expected: '', description: '', size: '', hash: '', parent: '', mtype: '', bios: '', driver_status: '' };
   FILTER_OPEN = null;
+  KW_MODE = {};
   document.getElementById('search').value = '';
+  const kwSearch = document.getElementById('kwSearch');
+  if (kwSearch) kwSearch.value = '';
   document.querySelectorAll('.col-filter').forEach(inp => { inp.value = ''; });
   document.querySelectorAll('.summary .pill').forEach(p => p.classList.remove('active'));
   const all = document.querySelector('.summary .pill[data-f="all"]');
   if (all) all.classList.add('active');
+  renderKeywordChips();
   renderTable();
 }
+
+
+/* ---- Redimensionnement colonnes ---- */
+const RESIZABLE_COLS = ['col-expected', 'col-desc', 'col-zip', 'col-rom'];
+const COL_WIDTH_KEY = 'rsv_col_widths';
+let _colResize = null; // { col, startX, startW }
+
+function loadColWidths() {
+  try {
+    const raw = localStorage.getItem(COL_WIDTH_KEY);
+    if (!raw) return;
+    const map = JSON.parse(raw);
+    RESIZABLE_COLS.forEach(function (cls) {
+      if (map[cls]) applyColWidth(cls, map[cls]);
+    });
+  } catch (e) {}
+}
+
+function saveColWidths() {
+  const map = {};
+  RESIZABLE_COLS.forEach(function (cls) {
+    const th = document.querySelector('table.results th.' + cls);
+    if (th && th.style.width) map[cls] = th.style.width;
+  });
+  try { localStorage.setItem(COL_WIDTH_KEY, JSON.stringify(map)); } catch (e) {}
+}
+
+function applyColWidth(cls, width) {
+  const w = typeof width === 'number' ? (width + 'px') : width;
+  document.querySelectorAll('table.results th.' + cls + ', table.results td.' + cls).forEach(function (el) {
+    el.style.width = w;
+    el.style.maxWidth = w;
+  });
+  // col-desc cells might use class col-desc
+}
+
+function initColResize() {
+  const table = document.querySelector('table.results');
+  if (!table) return;
+  table.querySelectorAll('.col-resize-handle').forEach(function (handle) {
+    handle.addEventListener('mousedown', onColResizeStart);
+  });
+  loadColWidths();
+}
+
+function onColResizeStart(ev) {
+  ev.preventDefault();
+  ev.stopPropagation();
+  const cls = ev.currentTarget.getAttribute('data-resize-col');
+  const th = document.querySelector('table.results th.' + cls);
+  if (!th) return;
+  const startW = th.getBoundingClientRect().width;
+  _colResize = { col: cls, startX: ev.clientX, startW: startW };
+  ev.currentTarget.classList.add('active');
+  document.body.classList.add('col-resizing');
+  document.addEventListener('mousemove', onColResizeMove);
+  document.addEventListener('mouseup', onColResizeEnd);
+}
+
+function onColResizeMove(ev) {
+  if (!_colResize) return;
+  const dx = ev.clientX - _colResize.startX;
+  let w = Math.round(_colResize.startW + dx);
+  if (w < 60) w = 60;
+  if (w > 800) w = 800;
+  applyColWidth(_colResize.col, w);
+}
+
+function onColResizeEnd() {
+  if (!_colResize) return;
+  document.querySelectorAll('.col-resize-handle.active').forEach(function (h) {
+    h.classList.remove('active');
+  });
+  document.body.classList.remove('col-resizing');
+  document.removeEventListener('mousemove', onColResizeMove);
+  document.removeEventListener('mouseup', onColResizeEnd);
+  saveColWidths();
+  _colResize = null;
+}
+
 
 function setStatusFilter(el) {
   document.querySelectorAll('.summary .pill').forEach(p => p.classList.remove('active'));
@@ -1871,6 +2320,10 @@ async function loadDat() {
 /** Vide complètement les résultats affichés (entre deux scans / changement de DAT). */
 function clearScanResults() {
   RESULTS = [];
+  KW_ALL = [];
+  KW_MODE = {};
+  const _kwBar = document.getElementById('kwBar');
+  if (_kwBar) _kwBar.classList.add('hidden');
   SELECTED = new Set();
   INDEXED = [];
   VIEW_ROWS = [];
@@ -1886,8 +2339,13 @@ function clearScanResults() {
 
 
 async function quitApp() {
-  const msg = t('quit.confirm') || 'Quitter RomSet Verifier ?\nLe serveur local sera arrêté.';
-  if (!confirm(msg)) return;
+  const ok = await openConfirm(
+    t('quit.title') || 'Quitter',
+    t('quit.confirm') || 'Quitter RomSet Verifier ?\nLe serveur local sera arrêté.',
+    t('quit.ok') || 'Quitter',
+    t('confirm.cancel') || 'Annuler'
+  );
+  if (!ok) return;
   try {
     // Ne pas attendre longtemps : le serveur coupe la connexion
     await Promise.race([
@@ -1965,7 +2423,14 @@ async function doScan() {
 async function enrichAdb() {
   if (DAT_MODE !== 'arcade') return toast(t('toast.adb_only_arcade'), false);
   if (!RESULTS.length) return toast(t('toast.adb_need_scan'), false);
-  if (!confirm(t('toast.adb_confirm', { n: RESULTS.length }))) return;
+  {
+    const ok = await openConfirm(
+      t('toast.adb_title') || 'Noms ADB',
+      t('toast.adb_confirm', { n: RESULTS.length }),
+      t('confirm.ok') || 'Confirmer'
+    );
+    if (!ok) return;
+  }
   showLoading(t('loading.adb'), t('loading.adb_sub'));
   try {
     const data = await api('/api/mame/enrich', {
@@ -2139,6 +2604,9 @@ async function repairFromDetail() {
     if (data.error) { toast(data.error, false); return; }
     if (data.failed && data.failed.length) {
       toast(data.failed[0].error || 'Échec', false);
+      if (data.failed[0].row) {
+        RESULTS[idx] = Object.assign({}, RESULTS[idx], data.failed[0].row);
+      }
     }
     if (data.rows && data.rows[0]) {
       RESULTS[idx] = Object.assign({}, RESULTS[idx], data.rows[0].row || {});
@@ -2210,6 +2678,9 @@ async function actRepair() {
       }
       for (const f of (data.failed || [])) {
         fail++;
+        if (f.row && RESULTS[f.index] !== undefined) {
+          RESULTS[f.index] = Object.assign({}, RESULTS[f.index], f.row);
+        }
         items.push({ ok: false, from: f.game || r.game || ('#' + f.index), error: f.error });
       }
       ok += repaired;
@@ -2281,17 +2752,28 @@ async function actRename() {
 
 let _confirmResolve = null;
 
-function openConfirm(title, bodyHtml) {
+function openConfirm(title, bodyHtml, okLabel, cancelLabel) {
   return new Promise(function (resolve) {
     _confirmResolve = resolve;
     const titleEl = document.getElementById('confirmTitle');
     const bodyEl = document.getElementById('confirmBody');
     const modal = document.getElementById('confirmModal');
-    if (titleEl) titleEl.textContent = title || 'Confirmation';
-    if (bodyEl) bodyEl.innerHTML = bodyHtml || '';
+    const okBtn = document.getElementById('confirmOkBtn');
+    const cancelBtn = document.getElementById('confirmCancelBtn');
+    if (titleEl) titleEl.textContent = title || (t('confirm.title') || 'Confirmer');
+    if (bodyEl) {
+      // Texte brut (\n) → paragraphes HTML
+      if (bodyHtml && bodyHtml.indexOf('<') === -1) {
+        bodyEl.innerHTML = String(bodyHtml).split(/\n+/).filter(Boolean)
+          .map(function (line) { return '<p>' + line + '</p>'; }).join('');
+      } else {
+        bodyEl.innerHTML = bodyHtml || '';
+      }
+    }
+    if (okBtn) okBtn.textContent = okLabel || t('confirm.ok') || 'Confirmer';
+    if (cancelBtn) cancelBtn.textContent = cancelLabel || t('confirm.cancel') || 'Annuler';
     if (modal) modal.classList.add('open');
     else {
-      // fallback navigateur
       resolve(window.confirm(title || 'Confirmer ?'));
       _confirmResolve = null;
     }
@@ -2307,6 +2789,12 @@ function closeConfirm(ok) {
     r(!!ok);
   }
 }
+
+document.addEventListener('keydown', function confirmEsc(e) {
+  if (e.key !== 'Escape') return;
+  const modal = document.getElementById('confirmModal');
+  if (modal && modal.classList.contains('open')) closeConfirm(false);
+});
 
 async function actDelete() {
   // Fichiers présents sur disque (path renseigné) — y compris Good en mode MAME
@@ -2435,7 +2923,14 @@ async function actDeleteBads() {
     .filter(x => x.r.status === 'bad' || x.r.status === 'error')
     .filter(x => x.r.path);
   if (!pending.length) return toast('Aucun Bad/Error a supprimer', false);
-  if (!confirm('Supprimer TOUS les fichiers Bad / Error (' + pending.length + ') ?')) return;
+  {
+    const ok = await openConfirm(
+      t('confirm.delete_bads_title') || 'Supprimer les Bad',
+      (t('confirm.delete_bads_body') || 'Supprimer TOUS les fichiers Bad / Error ({n}) ?').replace('{n}', pending.length),
+      t('confirm.delete') || 'Supprimer'
+    );
+    if (!ok) return;
+  }
 
   const items = [];
   let done = 0, fail = 0;
@@ -2505,7 +3000,7 @@ async function openBrowser(mode) {
       }
       if (mode === 'roms') {
         const folder = await window.electronAPI.openRomsFolder();
-        if (folder) { document.getElementById('romsPath').value = folder; toast('Dossier sélectionné'); }
+        if (folder) { document.getElementById('romsPath').value = folder; toast(t('browser.folder_selected') || 'Dossier sélectionné'); }
         return;
       }
       // exe / xml : navigateur intégré ci-dessous
@@ -2803,7 +3298,7 @@ function pickFile(path) {
   if (BROWSER_MODE === 'xml') {
     const el = document.getElementById('mameSourceXml');
     if (el) el.value = path;
-    toast('XML sélectionné');
+    toast(t('browser.xml_selected') || 'XML sélectionné');
     if (typeof analyzeMameSource === 'function') analyzeMameSource();
     return;
   }
@@ -2845,9 +3340,9 @@ let DAT_PACK = 'nointro', DAT_ITEMS = [];
 
 
 const APP_ABOUT = {
-  version: '1.0.0-beta',
-  versionLabel: 'v1.0.0-beta',
-  date: '2026-08-16',
+  version: '1.1.0-beta',
+  versionLabel: 'v1.1.0-beta',
+  date: '2026-08-28',
   author: 'Franck Fornasari',
   repo: 'https://github.com/Kraran/romset-verifier',
 };
@@ -3068,7 +3563,7 @@ async function generateMameXml() {
     });
     if (data.error) { st.textContent = data.error; toast(data.error, false); return; }
     st.textContent = 'OK → ' + data.path + ' (' + formatSize(data.size) + ')';
-    toast('XML généré : ' + data.path);
+    toast((t('mamegen.xml_generated') || 'XML généré') + ' : ' + data.path);
     if (data.path) {
       document.getElementById('datPath').value = data.path;
       const src = document.getElementById('mameSourceXml');
@@ -3098,7 +3593,7 @@ async function generateMameXmlLocal() {
     });
     if (data.error) { st.textContent = data.error; toast(data.error, false); return; }
     st.textContent = 'OK → ' + data.path + ' (' + formatSize(data.size) + ') — v' + (data.version || '?');
-    toast('XML généré depuis MAME local');
+    toast(t('mamegen.xml_from_local') || 'XML généré depuis MAME local');
     if (data.path) {
       document.getElementById('datPath').value = data.path;
       const src = document.getElementById('mameSourceXml');
@@ -3230,7 +3725,7 @@ function presetCatExclude(list) {
 function clearCategoryFilters() {
   CAT_EXCLUDE = [];
   syncCategoryHiddenFields();
-  toast('Exclusions effacées');
+  toast(t('mamegen.exclusions_cleared') || 'Exclusions effacées');
 }
 
 async function loadMameCategories(force) {
@@ -3267,7 +3762,7 @@ async function loadMameCategories(force) {
     const msg = genres.length + ' genres · ' + (data.catlist || []).length + ' catégories catlist';
     if (st) st.textContent = msg;
     if (st2) st2.textContent = msg;
-    toast('Catégories chargées');
+    toast(t('mamegen.categories_loaded') || 'Catégories chargées');
   } catch (e) {
     if (st) st.textContent = String(e);
     if (st2) st2.textContent = String(e);
@@ -3287,6 +3782,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
   renderCategoryTags();
+  try { initColResize(); } catch (e) {}
 });
 
 async function analyzeMameSource() {
@@ -3458,7 +3954,15 @@ async function downloadOne(file) {
 async function downloadPack() {
   const labels = {nointro:'No-Intro (~100 Mo)', redump:'Redump (~30 Mo)', mameredump:'MAMERedump (repo GitHub, peut etre volumineux)', mame:'MAME DATs (repo GitHub)', fbneo:'FBNeo DATs (repo GitHub)'};
   const hint = labels[DAT_PACK] || DAT_PACK;
-  if (!confirm('Telecharger le pack ' + hint + ' ?\nLes DAT seront extraits dans dat/' + DAT_PACK + '/')) return;
+  {
+    const ok = await openConfirm(
+      t('dats.download_title') || 'Télécharger',
+      (t('dats.download_confirm') || 'Télécharger le pack {hint} ?\nLes DAT seront extraits dans dat/{pack}/')
+        .replace('{hint}', hint).replace('{pack}', DAT_PACK),
+      t('confirm.ok') || 'Confirmer'
+    );
+    if (!ok) return;
+  }
   document.getElementById('datsStatus').textContent = 'Telechargement du pack complet en cours…';
   showLoading('Telechargement du pack ' + DAT_PACK + '…', 'Cela peut prendre plusieurs minutes');
   try {
@@ -3814,7 +4318,10 @@ async function resetProfileDats() {
   const msg = (t('prof.reset_dats_warn') ||
     'Réinitialiser tous les DAT du profil ?\\n\\nLes associations manuelles seront écrasées par les suggestions automatiques.\\nLes résultats de scan liés seront effacés.')
     .replace(/\\n/g, '\n');
-  if (!confirm(msg)) return;
+  {
+    const ok = await openConfirm(t('prof.reset_dats_title') || 'Réinitialiser les DAT', msg, t('confirm.ok') || 'Confirmer');
+    if (!ok) return;
+  }
   showLoading(t('prof.resetting_dats') || 'Réinitialisation des DAT…', CURRENT_PROFILE.name || '');
   try {
     const data = await api('/api/profiles/' + encodeURIComponent(CURRENT_PROFILE.id) + '/reset_dats', {
@@ -3852,7 +4359,14 @@ async function openSystemInScan(systemId) {
 
 async function deleteCurrentProfile() {
   if (!CURRENT_PROFILE) return;
-  if (!confirm((t('prof.confirm_delete') || 'Supprimer le profil') + ' « ' + CURRENT_PROFILE.name + ' » ?')) return;
+  {
+    const ok = await openConfirm(
+      t('prof.delete_title') || 'Supprimer le profil',
+      (t('prof.confirm_delete') || 'Supprimer le profil') + ' « ' + CURRENT_PROFILE.name + ' » ?',
+      t('confirm.delete') || 'Supprimer'
+    );
+    if (!ok) return;
+  }
   try {
     const data = await api('/api/profiles/' + encodeURIComponent(CURRENT_PROFILE.id), { method: 'DELETE' });
     if (data.error) { toast(data.error, false); return; }
@@ -3886,7 +4400,7 @@ loadI18n(LANG);
             <img class="app-about-icon" src="/icon-256.png" alt="RomSet Verifier" width="56" height="56">
             <div>
               <h2>RomSet Verifier</h2>
-              <div class="ver" id="aboutVersion">v1.0.0-beta</div>
+              <div class="ver" id="aboutVersion">v1.1.0-beta</div>
             </div>
           </div>
           <p class="about-desc" data-i18n="about.desc">
@@ -3895,9 +4409,9 @@ loadI18n(LANG);
           </p>
           <dl class="about-grid">
             <dt data-i18n="about.version">Version</dt>
-            <dd id="aboutVersion2">1.0.0-beta</dd>
+            <dd id="aboutVersion2">1.1.0-beta</dd>
             <dt data-i18n="about.date">Date</dt>
-            <dd id="aboutDate">2026-08-16</dd>
+            <dd id="aboutDate">2026-08-28</dd>
             <dt data-i18n="about.author">Auteur</dt>
             <dd>Franck Fornasari (<a href="https://github.com/Kraran" target="_blank" rel="noopener">Kraran</a>)</dd>
             <dt data-i18n="about.license">Licence</dt>

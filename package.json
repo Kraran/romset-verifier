@@ -1,6 +1,6 @@
 {
   "name": "romset-verifier",
-  "version": "1.0.0-beta",
+  "version": "1.1.0-beta",
   "description": "RomSet Verifier — ROM set auditor for RetroBat / Batocera / Recalbox (No-Intro, Redump, MAME, FBNeo)",
   "main": "main.js",
   "scripts": {

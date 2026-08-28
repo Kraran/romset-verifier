@@ -8,21 +8,20 @@ from __future__ import annotations
 
 import hashlib
 import io
-import os
-import re
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
-import sys
+import re
 import subprocess
-import traceback
+import sys
 import threading
+import time
+import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
 import zlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -35,7 +34,7 @@ from lxml import etree
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
-APP_VERSION = "1.0.0-beta"
+APP_VERSION = "1.1.0-beta"
 APP_NAME = "RomSet Verifier"
 DEFAULT_DAT_DIR = SCRIPT_DIR / "dat"
 DEFAULT_ROMS_DIR = SCRIPT_DIR / "roms"
@@ -1299,7 +1298,37 @@ def _scan_one_mame_machine(args: Tuple) -> Dict:
     found_count = 0
     matched_members: set = set()  # actual zip member names matched
 
-    for r in roms:
+    # Noms DAT requis (pour ne jamais « voler » un membre qui est déjà le bon nom d'une autre ROM)
+    required_names = {
+        Path(r.get("name") or "").name.lower()
+        for r in roms
+        if (r.get("name") or "") and (r.get("status") or "good").lower() != "nodump"
+    }
+
+    # Pass 1 : réserver les correspondances nom exact + CRC (priorité absolue)
+    exact_hits: Dict[int, Tuple[str, int]] = {}  # index dans roms → (fn, sz)
+    for i, r in enumerate(roms):
+        rname = r.get("name") or ""
+        if not rname:
+            continue
+        rstatus = (r.get("status") or "good").lower()
+        if rstatus == "nodump":
+            continue
+        crc_i = r.get("crc_int", -1)
+        if crc_i < 0:
+            continue
+        rname_l = Path(rname).name.lower()
+        size_e = r.get("size") or 0
+        hits = crc_idx.get(crc_i) or []
+        for fn, sz in hits:
+            if fn in matched_members:
+                continue
+            if Path(fn).name.lower() == rname_l and (not size_e or sz == size_e):
+                exact_hits[i] = (fn, sz)
+                matched_members.add(fn)
+                break
+
+    for i, r in enumerate(roms):
         rname = r.get("name") or ""
         crc_s = (r.get("crc") or "").lower()
         crc_i = r.get("crc_int", -1)
@@ -1322,107 +1351,145 @@ def _scan_one_mame_machine(args: Tuple) -> Dict:
             ))
             continue
 
+        rname_l = Path(rname).name.lower()
         hits = crc_idx.get(crc_i) or []
-        hit = None
-        rname_l = rname.lower()
 
-        def _pick(prefer_unused=True):
-            # 1) nom exact + taille
-            for fn, sz in hits:
-                if prefer_unused and fn in matched_members:
-                    continue
-                if Path(fn).name.lower() == rname_l and (not size_e or sz == size_e):
-                    return (fn, sz)
-            # 2) nom exact
-            for fn, sz in hits:
-                if prefer_unused and fn in matched_members:
-                    continue
-                if Path(fn).name.lower() == rname_l:
-                    return (fn, sz)
-            # 3) taille
-            if size_e:
-                for fn, sz in hits:
-                    if prefer_unused and fn in matched_members:
-                        continue
-                    if sz == size_e:
-                        return (fn, sz)
-            # 4) premier libre
-            for fn, sz in hits:
-                if prefer_unused and fn in matched_members:
-                    continue
-                return (fn, sz)
-            return None
-
-        hit = _pick(True)
-        shared = False  # entrée DAT en double (même fichier, même CRC) — fréquent FBNeo
-
-        if hit is None:
-            # CRC présent mais membre déjà consommé : partage OK si nom+CRC correspondent
-            shared_hit = _pick(False)
-            if shared_hit is not None:
-                sfn, ssz = shared_hit
-                if Path(sfn).name.lower() == rname_l:
-                    hit = shared_hit
-                    shared = True
-
-        if hit is None:
-            # CRC absent du ZIP : nom présent avec un autre CRC ?
-            by_name = name_idx.get(rname_l)
-            if by_name:
-                fn, sz, found_crc = by_name
-                # Même CRC que demandé + déjà matché → doublon DAT, pas un bad_crc
-                if found_crc == crc_i:
-                    hit = (fn, sz)
-                    shared = True
-                else:
-                    # Vrai mauvais CRC seulement si ce membre n'a pas déjà été
-                    # validé pour UNE autre entrée qui attendait CE crc... 
-                    # Sinon c'est bien un conflit de contenu sous ce nom.
-                    components.append(_comp(
-                        "rom", rname, "bad_crc",
-                        found=fn, crc_expected=crc_s,
-                        crc_found=f"{found_crc:08x}",
-                        size_expected=size_e, size_found=sz,
-                        message="CRC incorrect",
-                    ))
-                    bad_roms.append(rname)
-                    continue
+        if i in exact_hits:
+            fn, sz = exact_hits[i]
+            found_count += 1
+            if size_e and sz != size_e:
+                components.append(_comp(
+                    "rom", rname, "bad_size",
+                    found=fn, crc_expected=crc_s, crc_found=crc_s,
+                    size_expected=size_e, size_found=sz,
+                    message="taille différente",
+                ))
+                bad_roms.append(rname)
             else:
                 components.append(_comp(
-                    "rom", rname, "missing",
-                    crc_expected=crc_s, size_expected=size_e,
-                    message="absente du ZIP",
+                    "rom", rname, "ok",
+                    found=fn, crc_expected=crc_s, crc_found=crc_s,
+                    size_expected=size_e, size_found=sz,
+                    message="OK",
                 ))
-                missing_roms.append(rname)
-                continue
+            continue
 
-        fn, sz = hit
-        if not shared:
+        # Pass 2 : CRC dans un membre encore libre dont le nom N'EST PAS un autre nom DAT requis
+        hit = None
+        if size_e:
+            for fn, sz in hits:
+                if fn in matched_members:
+                    continue
+                if Path(fn).name.lower() in required_names:
+                    continue
+                if sz == size_e:
+                    hit = (fn, sz)
+                    break
+        if hit is None:
+            for fn, sz in hits:
+                if fn in matched_members:
+                    continue
+                if Path(fn).name.lower() in required_names:
+                    continue
+                hit = (fn, sz)
+                break
+
+        if hit is not None:
+            fn, sz = hit
             matched_members.add(fn)
-        found_count += 1
-        base_fn = Path(fn).name
-        if base_fn.lower() != rname_l and not shared:
+            found_count += 1
+            base_fn = Path(fn).name
+            if base_fn.lower() != rname_l:
+                components.append(_comp(
+                    "rom", rname, "rename",
+                    found=fn, crc_expected=crc_s, crc_found=crc_s,
+                    size_expected=size_e, size_found=sz,
+                    message=f"CRC OK, nom différent → {base_fn}",
+                ))
+            elif size_e and sz != size_e:
+                components.append(_comp(
+                    "rom", rname, "bad_size",
+                    found=fn, crc_expected=crc_s, crc_found=crc_s,
+                    size_expected=size_e, size_found=sz,
+                    message="taille différente",
+                ))
+                bad_roms.append(rname)
+            else:
+                components.append(_comp(
+                    "rom", rname, "ok",
+                    found=fn, crc_expected=crc_s, crc_found=crc_s,
+                    size_expected=size_e, size_found=sz,
+                    message="OK",
+                ))
+            continue
+
+        # Pass 3 : le CRC est dans le ZIP
+        #  a) même nom déjà présent (entrée DAT répétée, ex. DECO Cassette)
+        #     → un seul fichier suffit, c'est OK partagé
+        #  b) autre nom → il faut DUPLIQUER sous le nom attendu
+        if hits:
+            same = None
+            other = None
+            for fn, sz in hits:
+                if Path(fn).name.lower() == rname_l:
+                    same = (fn, sz)
+                    break
+                if other is None:
+                    other = (fn, sz)
+            if same is None:
+                # nom exact via name_idx (chemin différent / casse)
+                by_name = name_idx.get(rname_l)
+                if by_name and by_name[2] == crc_i:
+                    same = (by_name[0], by_name[1])
+            if same is not None:
+                fn, sz = same
+                found_count += 1
+                components.append(_comp(
+                    "rom", rname, "ok",
+                    found=fn, crc_expected=crc_s, crc_found=crc_s,
+                    size_expected=size_e, size_found=sz,
+                    message="OK",
+                ))
+                continue
+            fn, sz = other or hits[0]
+            found_count += 1
             components.append(_comp(
                 "rom", rname, "rename",
                 found=fn, crc_expected=crc_s, crc_found=crc_s,
                 size_expected=size_e, size_found=sz,
-                message=f"CRC OK, nom différent → {base_fn}",
+                message=f"CRC OK, à dupliquer depuis {Path(fn).name}",
             ))
-        elif size_e and sz != size_e:
-            components.append(_comp(
-                "rom", rname, "bad_size",
-                found=fn, crc_expected=crc_s, crc_found=crc_s,
-                size_expected=size_e, size_found=sz,
-                message="taille différente",
-            ))
-            bad_roms.append(rname)
-        else:
-            components.append(_comp(
-                "rom", rname, "ok",
-                found=fn, crc_expected=crc_s, crc_found=crc_s,
-                size_expected=size_e, size_found=sz,
-                message="OK",
-            ))
+            continue
+
+        # Pass 4 : nom présent avec un autre CRC
+        by_name = name_idx.get(rname_l)
+        if by_name:
+            fn, sz, found_crc = by_name
+            if found_crc == crc_i:
+                found_count += 1
+                components.append(_comp(
+                    "rom", rname, "ok",
+                    found=fn, crc_expected=crc_s, crc_found=crc_s,
+                    size_expected=size_e, size_found=sz,
+                    message="OK",
+                ))
+            else:
+                components.append(_comp(
+                    "rom", rname, "bad_crc",
+                    found=fn, crc_expected=crc_s,
+                    crc_found=f"{found_crc:08x}",
+                    size_expected=size_e, size_found=sz,
+                    message="CRC incorrect",
+                ))
+                bad_roms.append(rname)
+            continue
+
+        components.append(_comp(
+            "rom", rname, "missing",
+            crc_expected=crc_s, size_expected=size_e,
+            message="absente du ZIP",
+        ))
+        missing_roms.append(rname)
 
     # CHD
     chd_missing = []
@@ -2506,8 +2573,13 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                 plan: Dict[str, str] = {}
 
                 # 1) Match DAT CRC → fichier local
-                #    Priorité : nom exact, puis membre pas encore utilisé (CRC dupliqués MAME)
+                #    Passe A : réserver les noms exacts (évite de voler 107.b2 pour 104.f5)
                 used_sources: set = set()
+                required_basenames = {
+                    Path(r.get("name") or "").name.lower()
+                    for r in roms_req
+                    if r.get("name")
+                }
                 for r in roms_req:
                     expected = Path(r.get("name") or "").name
                     if not expected or expected in plan:
@@ -2517,7 +2589,6 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                     size_e = int(r.get("size") or 0)
                     exp_l = expected.lower()
                     hit = None
-                    # a) nom exact non utilisé
                     for real, sz in cands:
                         if real in used_sources:
                             continue
@@ -2531,29 +2602,73 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                             if Path(real).name.lower() == exp_l:
                                 hit = real
                                 break
-                    # b) taille, non utilisé
-                    if hit is None and size_e:
-                        for real, sz in cands:
-                            if real in used_sources:
-                                continue
-                            if sz == size_e:
-                                hit = real
-                                break
-                    # c) premier non utilisé
-                    if hit is None:
-                        for real, sz in cands:
-                            if real in used_sources:
-                                continue
-                            hit = real
-                            break
-                    # d) contenu dupliqué : réutiliser un source déjà lu (même CRC)
-                    if hit is None and cands:
-                        hit = cands[0][0]
                     if hit is not None:
                         plan[expected] = hit
                         used_sources.add(hit)
                         if hit not in member_bytes:
                             member_bytes[hit] = zin.read(hit)
+
+                # Passe B : CRC sur un membre dont le nom n'est PAS un autre nom DAT
+                for r in roms_req:
+                    expected = Path(r.get("name") or "").name
+                    if not expected or expected in plan:
+                        continue
+                    crc_i = int(r["crc_int"])
+                    cands = by_crc.get(crc_i) or []
+                    size_e = int(r.get("size") or 0)
+                    hit = None
+                    if size_e:
+                        for real, sz in cands:
+                            if real in used_sources:
+                                continue
+                            if Path(real).name.lower() in required_basenames:
+                                continue
+                            if sz == size_e:
+                                hit = real
+                                break
+                    if hit is None:
+                        for real, sz in cands:
+                            if real in used_sources:
+                                continue
+                            if Path(real).name.lower() in required_basenames:
+                                continue
+                            hit = real
+                            break
+                    if hit is not None:
+                        plan[expected] = hit
+                        used_sources.add(hit)
+                        if hit not in member_bytes:
+                            try:
+                                member_bytes[hit] = zin.read(hit)
+                            except Exception as e:
+                                notes.append(f"Lecture {hit}: {e}")
+                                plan.pop(expected, None)
+
+                # Passe C : même CRC déjà lu → DUPLIQUER sous le nom attendu
+                for r in roms_req:
+                    expected = Path(r.get("name") or "").name
+                    if not expected or expected in plan:
+                        continue
+                    crc_i = int(r["crc_int"])
+                    cands = by_crc.get(crc_i) or []
+                    if not cands:
+                        continue
+                    hit = None
+                    for real, sz in cands:
+                        if real in member_bytes:
+                            hit = real
+                            break
+                    if hit is None:
+                        hit = cands[0][0]
+                    plan[expected] = hit
+                    if hit not in member_bytes:
+                        try:
+                            member_bytes[hit] = zin.read(hit)
+                        except Exception as e:
+                            notes.append(f"Lecture dup {hit}: {e}")
+                            plan.pop(expected, None)
+                            continue
+                    notes.append(f"dupliquer {Path(hit).name} → {expected}")
 
                 # 1b) ROMs encore absentes du plan mais CRC présent dans le ZIP
                 #     → dupliquer le contenu (2 noms DAT, 1 CRC = 2 fichiers non-merged)
@@ -3598,9 +3713,14 @@ def api_repair():
         if ok:
             done += 1
             row["repairable"] = _row_is_repairable(row)
-            rows_out.append({"index": idx, "row": _public_row(row), "message": msg})
+            rows_out.append({"index": idx, "row": _public_row(row, include_components=True), "message": msg})
         else:
-            failed.append({"index": idx, "error": msg, "game": row.get("game") or row.get("found")})
+            failed.append({
+                "index": idx,
+                "error": msg,
+                "game": row.get("game") or row.get("found"),
+                "row": _public_row(row, include_components=True),
+            })
     return jsonify({
         "ok": True,
         "repaired": done,
@@ -6492,42 +6612,223 @@ def api_profiles_scan_system(profile_id: str):
 
 @app.route("/api/shutdown", methods=["POST", "GET"])
 def api_shutdown():
-    """Arrêt propre du serveur (bouton Quitter)."""
+    """Arrêt propre du serveur (bouton Quitter) + fenêtre application."""
     def _stop():
         time.sleep(0.35)
-        # Ferme le process Python → la fenêtre Lancer.bat se termine
+        _close_ui_window()
         os._exit(0)
     threading.Thread(target=_stop, daemon=True).start()
     return jsonify({"ok": True, "message": "Arrêt…"})
 
 
+# ---------------------------------------------------------------------------
+# Fenêtre application (mode --app= Chromium, comme Gamelist Media Editor)
+# ---------------------------------------------------------------------------
+
+_UI_PROC = None
+
+
+def _chromium_candidates():
+    """Chemins connus Edge / Chrome / Brave (Windows + Linux)."""
+    pf = os.environ.get("ProgramFiles") or r"C:\Program Files"
+    pfx86 = os.environ.get("ProgramFiles(x86)") or r"C:\Program Files (x86)"
+    local = os.environ.get("LOCALAPPDATA") or ""
+    return [
+        os.path.join(pfx86, r"Microsoft\Edge\Application\msedge.exe"),
+        os.path.join(pf, r"Microsoft\Edge\Application\msedge.exe"),
+        os.path.join(local, r"Microsoft\Edge\Application\msedge.exe"),
+        os.path.join(pf, r"Google\Chrome\Application\chrome.exe"),
+        os.path.join(local, r"Google\Chrome\Application\chrome.exe"),
+        os.path.join(pf, r"BraveSoftware\Brave-Browser\Application\brave.exe"),
+        os.path.join(local, r"BraveSoftware\Brave-Browser\Application\brave.exe"),
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/microsoft-edge",
+        "/usr/bin/brave-browser",
+        "/usr/bin/brave",
+    ]
+
+
+def _is_chromium_exe(path):
+    name = os.path.basename(path or "").lower()
+    return name in {
+        "msedge.exe", "chrome.exe", "brave.exe", "chromium.exe",
+        "google-chrome", "google-chrome-stable", "chromium",
+        "chromium-browser", "microsoft-edge", "brave-browser", "brave",
+    }
+
+
+def _windows_http_progid():
+    """Handler HTTP par défaut (ChromeHTML, MSEdgeHTM, FirefoxURL…)."""
+    if os.name != "nt":
+        return ""
+    try:
+        import winreg
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice",
+        ) as key:
+            progid, _ = winreg.QueryValueEx(key, "ProgId")
+        return (progid or "").strip()
+    except Exception:
+        return ""
+
+
+def _exe_from_progid(progid):
+    if not progid or os.name != "nt":
+        return None
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, rf"{progid}\shell\open\command") as key:
+            cmd, _ = winreg.QueryValueEx(key, None)
+        cmd = (cmd or "").strip()
+        if cmd.startswith('"'):
+            end = cmd.find('"', 1)
+            if end > 1:
+                return cmd[1:end]
+        return cmd.split()[0] if cmd else None
+    except Exception:
+        return None
+
+
+def _find_app_mode_browser():
+    """
+    Navigateur par défaut s'il est Chrome / Edge / Brave → --app=
+    Sinon Edge, puis Chrome, puis Brave.
+    Sinon None (Firefox seul → navigateur normal).
+    """
+    progid = _windows_http_progid().lower()
+    default_exe = _exe_from_progid(_windows_http_progid())
+    if default_exe and os.path.isfile(default_exe) and _is_chromium_exe(default_exe):
+        return default_exe
+    if "chrome" in progid or "edge" in progid or "brave" in progid:
+        for path in _chromium_candidates():
+            if not path or not os.path.isfile(path):
+                continue
+            base = os.path.basename(path).lower()
+            if "chrome" in progid and "chrome" in base:
+                return path
+            if "edge" in progid and "msedge" in base:
+                return path
+            if "brave" in progid and "brave" in base:
+                return path
+    for path in _chromium_candidates():
+        if path and os.path.isfile(path):
+            return path
+    return None
+
+
+def _close_ui_window():
+    """Ferme la fenêtre --app= si on l'a lancée."""
+    global _UI_PROC
+    proc = _UI_PROC
+    if proc is None:
+        return
+    try:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=2)
+            except Exception:
+                proc.kill()
+    except Exception:
+        pass
+    _UI_PROC = None
+
+
+def _watch_ui_process():
+    """Fermer la fenêtre application → arrêter le serveur."""
+    time.sleep(3)
+    proc = _UI_PROC
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        proc.wait()
+    except Exception:
+        return
+    os._exit(0)
+
+
+def _open_browser(url):
+    """
+    Fenêtre Chromium dédiée (pas d'onglets / barre d'adresse) si possible.
+    Profil isolé dans app-window/ à côté de l'app.
+    Fallback : navigateur système (barres visibles).
+    """
+    global _UI_PROC
+    exe = _find_app_mode_browser()
+    if exe:
+        profile = str(SCRIPT_DIR / "app-window")
+        try:
+            os.makedirs(profile, exist_ok=True)
+        except OSError:
+            profile = None
+        cmd = [
+            exe,
+            f"--app={url}",
+            "--new-window",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-extensions",
+            "--window-size=1400,900",
+        ]
+        if profile:
+            cmd.append(f"--user-data-dir={profile}")
+        try:
+            _UI_PROC = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            threading.Thread(target=_watch_ui_process, daemon=True).start()
+            print(f"  Fenêtre application : {exe}")
+            return
+        except Exception as e:
+            print(f"  [!] Fenêtre --app= impossible ({e}) — navigateur normal")
+    try:
+        import webbrowser
+        webbrowser.open(url)
+        print("  Navigateur standard (barres visibles)")
+    except Exception:
+        pass
+
+
 def main():
     import argparse
-    import threading
-    import time
-    import webbrowser
 
     parser = argparse.ArgumentParser(description="RomSet Verifier")
-    parser.add_argument("--open", action="store_true", help="Ouvre le navigateur au demarrage")
+    parser.add_argument("--open", action="store_true", help="Ouvre la fenêtre application au démarrage")
     parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--no-app", action="store_true", help="Forcer le navigateur normal (avec barres)")
     args = parser.parse_args()
 
     ensure_folders()
+    url = f"http://127.0.0.1:{args.port}/"
     print("=" * 50)
     print(f"  {APP_NAME} {APP_VERSION}")
-    print(f"  http://127.0.0.1:{args.port}")
+    print(f"  {url}")
     print("=" * 50)
     print(f"  dat/  → {DEFAULT_DAT_DIR}")
     print(f"  roms/ → {DEFAULT_ROMS_DIR}")
+    print("  Fermer la fenêtre, Ctrl+C ou ⏻ Quitter pour arrêter.")
     print()
 
     if args.open:
         def _open():
-            time.sleep(1.2)
-            webbrowser.open(f"http://127.0.0.1:{args.port}/")
+            time.sleep(1.0)
+            if args.no_app:
+                try:
+                    import webbrowser
+                    webbrowser.open(url)
+                except Exception:
+                    pass
+            else:
+                _open_browser(url)
         threading.Thread(target=_open, daemon=True).start()
 
-    app.run(host="127.0.0.1", port=args.port, debug=False, threaded=True)
+    app.run(host="127.0.0.1", port=args.port, debug=False, use_reloader=False, threaded=True)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 # RomSet Verifier
 
-**Version 1.0.0-beta**
+**Version 1.1.0-beta**
 
 Local ROM set auditor for **RetroBat**, **Batocera** and **Recalbox** collections.
 
@@ -36,9 +36,11 @@ Verify, repair and maintain No-Intro / Redump / MAME / FBNeo sets with a dark UI
 
 1. Install [Python 3](https://www.python.org/downloads/) — enable **Add python.exe to PATH**
 2. Copy this folder wherever you like
-3. Double-click **`Lancer.bat`**
+3. Double-click **`Lancer.bat`** (or **`RomSet Verifier.bat`**)
    - Installs `flask` / `lxml` on first run if needed
-   - Starts **Electron** if Node.js is available, otherwise opens **http://127.0.0.1:8080** in your browser
+   - Opens a dedicated **application window** (`--app=` with Edge / Chrome / Brave: no tabs, no address bar)
+   - Falls back to the default browser if only Firefox is installed
+   - Closing the window or **Quit** stops the local server
 4. Load a DAT → choose a ROMs folder → **Scan**
 
 ### Manual start
