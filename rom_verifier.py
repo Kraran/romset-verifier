@@ -32,7 +32,18 @@ if _local_site.exists():
 from flask import Flask, jsonify, render_template_string, request, send_file
 from lxml import etree
 
-SCRIPT_DIR = Path(__file__).resolve().parent
+if getattr(sys, "frozen", False):
+    # PyInstaller : ressources packagées dans _MEIPASS, données user à côté de l'exe
+    BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    SCRIPT_DIR = Path(sys.executable).resolve().parent
+else:
+    BUNDLE_DIR = Path(__file__).resolve().parent
+    SCRIPT_DIR = BUNDLE_DIR
+
+
+def _asset(*parts: str) -> Path:
+    """Fichier livré avec l'app (_ui.html, i18n, icônes)."""
+    return BUNDLE_DIR.joinpath(*parts)
 
 APP_VERSION = "1.1.0-beta"
 APP_NAME = "RomSet Verifier"
@@ -3416,21 +3427,21 @@ def _no_cache(resp):
 
 
 # HTML is loaded from a separate file for clarity
-HTML_PATH = SCRIPT_DIR / "_ui.html"
+HTML_PATH = _asset("_ui.html")
 
 
 @app.route("/about-author.jpg")
 def about_author_img():
-    p = SCRIPT_DIR / "about-author.jpg"
+    p = _asset("about-author.jpg")
     if not p.is_file():
         return ("", 404)
     return send_file(p, mimetype="image/jpeg")
 
 @app.route("/icon.png")
 def icon_png():
-    p = SCRIPT_DIR / "icon.png"
+    p = _asset("icon.png")
     if not p.is_file():
-        p = SCRIPT_DIR / "icon-512.png"
+        p = _asset("icon-512.png")
     if not p.is_file():
         return ("", 404)
     return send_file(p, mimetype="image/png")
@@ -3438,11 +3449,11 @@ def icon_png():
 
 @app.route("/favicon.ico")
 def favicon():
-    p = SCRIPT_DIR / "favicon.ico"
+    p = _asset("favicon.ico")
     if p.is_file():
         return send_file(p, mimetype="image/x-icon")
     for name in ("icon-32.png", "icon-256.png", "icon.png"):
-        p = SCRIPT_DIR / name
+        p = _asset(name)
         if p.is_file():
             return send_file(p, mimetype="image/png")
     return ("", 404)
@@ -3450,9 +3461,9 @@ def favicon():
 
 @app.route("/icon-32.png")
 def icon_32():
-    p = SCRIPT_DIR / "icon-32.png"
+    p = _asset("icon-32.png")
     if not p.is_file():
-        p = SCRIPT_DIR / "icon.png"
+        p = _asset("icon.png")
     if not p.is_file():
         return ("", 404)
     return send_file(p, mimetype="image/png")
@@ -3460,9 +3471,9 @@ def icon_32():
 
 @app.route("/icon-256.png")
 def icon_256():
-    p = SCRIPT_DIR / "icon-256.png"
+    p = _asset("icon-256.png")
     if not p.is_file():
-        p = SCRIPT_DIR / "icon.png"
+        p = _asset("icon.png")
     if not p.is_file():
         return ("", 404)
     return send_file(p, mimetype="image/png")
@@ -3470,9 +3481,9 @@ def icon_256():
 
 @app.route("/icon-512.png")
 def icon_512():
-    p = SCRIPT_DIR / "icon-512.png"
+    p = _asset("icon-512.png")
     if not p.is_file():
-        p = SCRIPT_DIR / "icon.png"
+        p = _asset("icon.png")
     if not p.is_file():
         return ("", 404)
     return send_file(p, mimetype="image/png")
@@ -3495,7 +3506,7 @@ def index():
 def api_i18n(lang: str):
     """Serve language JSON (en, fr, …)."""
     lang = (lang or "fr").lower().split("-")[0]
-    base = SCRIPT_DIR / "i18n"
+    base = _asset("i18n")
     path = base / f"{lang}.json"
     if not path.is_file():
         path = base / "en.json"
@@ -3510,7 +3521,7 @@ def api_i18n(lang: str):
 
 @app.route("/api/i18n")
 def api_i18n_list():
-    base = SCRIPT_DIR / "i18n"
+    base = _asset("i18n")
     langs = []
     if base.is_dir():
         for p in sorted(base.glob("*.json")):
@@ -6798,11 +6809,21 @@ def _open_browser(url):
 def main():
     import argparse
 
+    if getattr(sys, "frozen", False):
+        try:
+            import multiprocessing
+            multiprocessing.freeze_support()
+        except Exception:
+            pass
+
     parser = argparse.ArgumentParser(description="RomSet Verifier")
     parser.add_argument("--open", action="store_true", help="Ouvre la fenêtre application au démarrage")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--no-app", action="store_true", help="Forcer le navigateur normal (avec barres)")
     args = parser.parse_args()
+    # Double-clic sur l'exe → ouvrir la fenêtre automatiquement
+    if getattr(sys, "frozen", False):
+        args.open = True
 
     ensure_folders()
     url = f"http://127.0.0.1:{args.port}/"

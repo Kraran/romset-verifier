@@ -1,2 +1,3 @@
-2026/08/28-11:50:42.697 1fb4 Creating DB C:\Util\RomSet Verifier\app-window\Default\Local Storage\leveldb since it was missing.
-2026/08/28-11:50:42.993 1fb4 Reusing MANIFEST C:\Util\RomSet Verifier\app-window\Default\Local Storage\leveldb/MANIFEST-000001
+2026/08/28-11:53:44.477 854 Reusing MANIFEST C:\Util\RomSet Verifier\app-window\Default\Local Storage\leveldb/MANIFEST-000001
+2026/08/28-11:53:44.496 854 Recovering log #3
+2026/08/28-11:53:44.500 854 Reusing old log C:\Util\RomSet Verifier\app-window\Default\Local Storage\leveldb/000003.log 

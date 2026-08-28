@@ -1,2 +1,3 @@
-2026/08/28-11:50:42.568 29c4 Creating DB C:\Util\RomSet Verifier\app-window\Default\BraveWallet\Brave Wallet Storage since it was missing.
-2026/08/28-11:50:42.732 29c4 Reusing MANIFEST C:\Util\RomSet Verifier\app-window\Default\BraveWallet\Brave Wallet Storage/MANIFEST-000001
+2026/08/28-11:53:44.381 23ac Reusing MANIFEST C:\Util\RomSet Verifier\app-window\Default\BraveWallet\Brave Wallet Storage/MANIFEST-000001
+2026/08/28-11:53:44.382 23ac Recovering log #3
+2026/08/28-11:53:44.382 23ac Reusing old log C:\Util\RomSet Verifier\app-window\Default\BraveWallet\Brave Wallet Storage/000003.log 
