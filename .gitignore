@@ -1,12 +1,36 @@
+# --- Runtime / user data ---
 roms/
 dat/
 profiles/
 cache/
+app-window/
+browsed_files/
+imagine_images/
+repair.log
+*.log
+install.json
+
+# --- PyInstaller / Electron / Python ---
+build/
+dist/
 node_modules/
 __pycache__/
-*.log
-repair.log
+*.pyc
+*.pyo
+*.spec.bak
+.grok/
+
+# --- Generated binaries ---
+*.exe
+*.zip
+!i18n/
+
+# --- Environments ---
+venv/
+.venv/
+.env
+
+# --- OS ---
 .DS_Store
 Thumbs.db
-venv/
-install.json
+Desktop.ini
