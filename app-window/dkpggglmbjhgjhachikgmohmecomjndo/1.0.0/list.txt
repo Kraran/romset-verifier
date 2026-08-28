@@ -1,4 +1,0 @@
-@@||api.twitter.com^
-@@||platform.twitter.com^
-@@||api.x.com^
-@@||platform.x.com^
