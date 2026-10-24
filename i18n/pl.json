@@ -388,5 +388,8 @@
   "prog.elapsed": "upłynęło {t}",
   "prog.counts": "{quick} po nazwie + rozmiarze · {cached} z pamięci · {hashed} odczytanych",
   "prog.units": "B,KB,MB,GB,TB",
-  "toast.scan_cancelled": "Skan anulowany"
+  "toast.scan_cancelled": "Skan anulowany",
+  "scan.quick_id": "ISO nazwa + rozmiar",
+  "scan.quick_id_title": "Duże pliki (≥ 64 MB: ISO…) są rozpoznawane po nazwie i rozmiarze bez odczytu (kilka sekund dla 100 ISO). Odznacz, aby obliczyć rzeczywiste CRC (kontrola bit po bicie, bardzo wolno)",
+  "prog.skipped": "Nierozpoznane duże pliki (nieodczytane): {n}"
 }

@@ -388,5 +388,8 @@
   "prog.elapsed": "{t} förflutet",
   "prog.counts": "{quick} via namn + storlek · {cached} från cache · {hashed} lästa",
   "prog.units": "B,KB,MB,GB,TB",
-  "toast.scan_cancelled": "Skanning avbruten"
+  "toast.scan_cancelled": "Skanning avbruten",
+  "scan.quick_id": "ISO namn + storlek",
+  "scan.quick_id_title": "Stora filer (≥ 64 MB: ISO…) identifieras via namn och storlek utan att läsas (några sekunder för 100 ISO). Avmarkera för att beräkna verklig CRC (bitexakt kontroll, mycket långsamt)",
+  "prog.skipped": "{n} stora filer ej identifierade (ej lästa)"
 }

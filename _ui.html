@@ -766,6 +766,10 @@ body.arcade-mode th.arcade-only, body.arcade-mode td.arcade-only { display: tabl
         <option value="1">1</option>
         <option value="2">2</option>
       </select>
+      <label class="subdir-opt" title="Gros fichiers (≥ 64 Mo : ISO…) identifiés par leur nom et leur taille, sans les lire (quelques secondes pour 100 ISO). Décochez pour calculer leur CRC réel (contrôle bit-exact, très long)" data-i18n-title="scan.quick_id_title">
+        <input type="checkbox" id="optQuickId" checked onchange="saveQuickIdPref()">
+        <span data-i18n="scan.quick_id">ISO nom + taille</span>
+      </label>
       <label class="subdir-opt" title="Recalcule le CRC complet des gros fichiers (sinon repris du cache ou reconnus par nom + taille) et décompresse les archives pour détecter les données corrompues (beaucoup plus lent)" data-i18n-title="scan.deep_title">
         <input type="checkbox" id="optDeep">
         <span data-i18n="scan.deep">Vérification approfondie</span>
@@ -1720,7 +1724,8 @@ function renderScanProgress(p) {
   });
   const c = p.counts || {};
   document.getElementById('scanProgCounts').textContent =
-    (c.quick || c.cached || c.hashed) ? t('prog.counts', { quick: c.quick || 0, cached: c.cached || 0, hashed: c.hashed || 0 }) : '';
+    ((c.quick || c.cached || c.hashed) ? t('prog.counts', { quick: c.quick || 0, cached: c.cached || 0, hashed: c.hashed || 0 }) : '') +
+    (c.skipped ? ((c.quick || c.cached || c.hashed) ? ' · ' : '') + t('prog.skipped', { n: c.skipped }) : '');
   const btn = document.getElementById('scanProgCancel');
   if (btn) btn.disabled = !!p.cancelling;
 }
@@ -2405,6 +2410,21 @@ function updateSummary(c) {
 }
 
 /** Vérification approfondie : décompresser les archives pour détecter la corruption. */
+function isQuickId() {
+  const el = document.getElementById('optQuickId');
+  return !el || el.checked;
+}
+function saveQuickIdPref() {
+  try { localStorage.setItem('rsv_quick_id', isQuickId() ? '1' : '0'); } catch (e) {}
+}
+(function restoreQuickIdPref() {
+  try {
+    const v = localStorage.getItem('rsv_quick_id');
+    const el = document.getElementById('optQuickId');
+    if (el && v !== null) el.checked = v !== '0';
+  } catch (e) {}
+})();
+
 function isDeepScan() {
   const el = document.getElementById('optDeep');
   return !!(el && el.checked);
@@ -2560,7 +2580,7 @@ async function doScan() {
     const data = await api('/api/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: path, max_depth: max_depth, deep: isDeepScan() })
+      body: JSON.stringify({ path: path, max_depth: max_depth, deep: isDeepScan(), quick_id: isQuickId() })
     });
     if (data.error) {
       const msg = data.cancelled ? t('toast.scan_cancelled') : data.error;
@@ -4409,7 +4429,7 @@ async function scanOneSystem(systemId) {
     const data = await api('/api/profiles/' + encodeURIComponent(CURRENT_PROFILE.id) + '/scan_system', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ system_id: systemId, max_depth: max_depth, deep: isDeepScan() })
+      body: JSON.stringify({ system_id: systemId, max_depth: max_depth, deep: isDeepScan(), quick_id: isQuickId() })
     });
     if (data.error) { toast(data.error, false); return; }
     CURRENT_PROFILE = data.profile;

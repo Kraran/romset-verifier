@@ -27,6 +27,7 @@ def client(monkeypatch):
     monkeypatch.setattr(rv, "QUICK_MATCH_MIN_SIZE", SIZE)
     monkeypatch.setattr(rv, "BIG_READ_MIN_SIZE", SIZE)
     monkeypatch.setattr(rv, "_READ_BUF", 16 * 1024)
+    monkeypatch.setattr(rv, "BIG_READ_BUF", 16 * 1024)
     rv.STATE.update({"results": [], "games_list": [], "roms_path": "", "scan_id": ""})
     return rv.app.test_client()
 
@@ -61,21 +62,31 @@ def slow_reads(monkeypatch, delay=0.002):
     return peak
 
 
+def counts(client):
+    return client.get("/api/scan/progress").get_json()["counts"]
+
+
 def test_progress_counts_after_scan(client, setup):
+    # mode rapide : 2 identifiés par nom + taille, 4 non identifiés (même taille, autre nom) jamais lus
     r = client.post("/api/scan", json={"path": str(setup)}).get_json()
     assert r["ok"]
-    p = client.get("/api/scan/progress").get_json()
-    assert p["running"] is False
-    assert p["counts"] == {"quick": 2, "cached": 0, "hashed": 4}
-    # 2e scan : les 4 CRC lus viennent du cache
+    assert client.get("/api/scan/progress").get_json()["running"] is False
+    assert counts(client) == {"quick": 2, "cached": 0, "hashed": 0, "skipped": 4}
+    # contrôle bit-exact : tout est lu…
+    client.post("/api/scan", json={"path": str(setup), "quick_id": False})
+    assert counts(client) == {"quick": 0, "cached": 0, "hashed": 6, "skipped": 0}
+    # … puis repris du cache, en mode rapide comme en bit-exact
+    client.post("/api/scan", json={"path": str(setup), "quick_id": False})
+    assert counts(client) == {"quick": 0, "cached": 6, "hashed": 0, "skipped": 0}
     client.post("/api/scan", json={"path": str(setup)})
-    assert client.get("/api/scan/progress").get_json()["counts"] == {"quick": 2, "cached": 4, "hashed": 0}
+    assert counts(client) == {"quick": 0, "cached": 6, "hashed": 0, "skipped": 0}
 
 
 def test_progress_visible_during_scan_and_big_reads_limited(client, setup, monkeypatch):
     peak = slow_reads(monkeypatch)
     out = {}
-    th = threading.Thread(target=lambda: out.update(client.post("/api/scan", json={"path": str(setup)}).get_json()))
+    th = threading.Thread(target=lambda: out.update(
+        client.post("/api/scan", json={"path": str(setup), "quick_id": False}).get_json()))
     th.start()
     seen = None
     for _ in range(500):
@@ -87,8 +98,8 @@ def test_progress_visible_during_scan_and_big_reads_limited(client, setup, monke
     th.join(30)
     assert out.get("ok"), out
     assert seen, "avancement jamais observé pendant la lecture"
-    assert seen["bytes_total"] == 4 * SIZE and seen["total"] == 4
-    assert seen["active"][0]["name"].startswith("wrong") and seen["active"][0]["size"] == SIZE
+    assert seen["bytes_total"] == 6 * SIZE and seen["total"] == 6
+    assert seen["active"][0]["size"] == SIZE
     assert peak[0] <= rv.BIG_READ_PARALLEL
 
 
@@ -96,7 +107,8 @@ def test_cancel_stops_scan(client, setup, monkeypatch):
     real_file_bytes = rv.SCAN_PROGRESS.file_bytes
     slow_reads(monkeypatch, delay=0.01)
     out = {}
-    th = threading.Thread(target=lambda: out.update(client.post("/api/scan", json={"path": str(setup)}).get_json()))
+    th = threading.Thread(target=lambda: out.update(
+        client.post("/api/scan", json={"path": str(setup), "quick_id": False}).get_json()))
     th.start()
     for _ in range(500):
         p = client.get("/api/scan/progress").get_json()

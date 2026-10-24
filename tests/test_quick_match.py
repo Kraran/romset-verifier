@@ -60,7 +60,7 @@ def test_large_file_matched_by_name_and_size_without_reading(client, setup, monk
     forbid_reads(monkeypatch)
     r = scan(client, roms)[0]
     assert r["status"] == "good" and r["quick"] is True
-    assert "CRC non calculé" in r["message"]
+    assert "CRC non relu" in r["message"]
 
 
 def test_name_match_is_case_insensitive(client, setup, monkeypatch):
@@ -81,10 +81,19 @@ def test_deep_check_computes_full_crc(client, setup):
     assert any(x["status"] == "bad" and x["found"] == "Halo 3 (USA).iso" for x in res)
 
 
-def test_wrong_name_falls_back_to_crc(client, setup):
+def test_wrong_name_unique_size_identified_without_reading(client, setup, monkeypatch):
     roms, iso, _ = setup
     (roms / "halo3.iso").write_bytes(iso)
+    forbid_reads(monkeypatch)
     r = scan(client, roms)[0]
+    assert r["status"] == "rename" and r["quick"]  # seule entrée du DAT à cette taille
+    assert "taille unique" in r["message"]
+
+
+def test_wrong_name_read_when_quick_id_off(client, setup):
+    roms, iso, _ = setup
+    (roms / "halo3.iso").write_bytes(iso)
+    r = scan(client, roms, quick_id=False)[0]
     assert r["status"] == "rename" and not r["quick"]
 
 

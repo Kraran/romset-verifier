@@ -388,5 +388,8 @@
   "prog.elapsed": "{t} geçti",
   "prog.counts": "{quick} ad + boyutla · {cached} önbellekten · {hashed} okundu",
   "prog.units": "B,KB,MB,GB,TB",
-  "toast.scan_cancelled": "Tarama iptal edildi"
+  "toast.scan_cancelled": "Tarama iptal edildi",
+  "scan.quick_id": "ISO ad + boyut",
+  "scan.quick_id_title": "Büyük dosyalar (≥ 64 MB: ISO…) okunmadan ad ve boyutla tanınır (100 ISO için birkaç saniye). Gerçek CRC'yi hesaplamak için işareti kaldırın (bit düzeyinde denetim, çok yavaş)",
+  "prog.skipped": "{n} büyük dosya tanınmadı (okunmadı)"
 }

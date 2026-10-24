@@ -388,5 +388,8 @@
   "prog.elapsed": "{t} gått",
   "prog.counts": "{quick} via navn + størrelse · {cached} fra hurtigbuffer · {hashed} lest",
   "prog.units": "B,KB,MB,GB,TB",
-  "toast.scan_cancelled": "Skanning avbrutt"
+  "toast.scan_cancelled": "Skanning avbrutt",
+  "scan.quick_id": "ISO navn + størrelse",
+  "scan.quick_id_title": "Store filer (≥ 64 MB: ISO…) gjenkjennes på navn og størrelse uten å bli lest (noen sekunder for 100 ISO-er). Fjern avkryssingen for å beregne ekte CRC (bit-nøyaktig kontroll, svært tregt)",
+  "prog.skipped": "{n} store filer ikke gjenkjent (ikke lest)"
 }
