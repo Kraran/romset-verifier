@@ -71,7 +71,8 @@ python rom_verifier.py --open
 | Merged / split MAME | Not supported |
 | Network drives (NAS) | Supported but slower; close Explorer/emulators before repair/rezip |
 | ZIP recompress | Rewrites every `.zip` in the folder (backup recommended on first try) |
-| Security | Server binds to **127.0.0.1** only (local machine) |
+| Security | Server binds to **127.0.0.1** only; requests whose `Host` or `Origin` is not local are refused (protects against DNS rebinding and cross-site requests) |
+| Concurrency | One operation at a time (scan, repair, delete, rezip); actions on results from an older scan are refused — rescan |
 | Deleted files | Never erased: moved to `.rsv_trash/<date>/` inside the ROMs folder (empty it yourself once checked) |
 | Repair | Files not in the DAT are kept in the ZIP; if a wrong file must be removed, the original ZIP is copied to `.rsv_trash/` first |
 

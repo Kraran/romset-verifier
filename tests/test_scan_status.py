@@ -21,6 +21,13 @@ T = b"T" * 2048
 SHA = "11" * 20
 
 
+def act(client, url: str, body: dict = None):
+    """Action sur les résultats du dernier scan (joint le scan_id, comme l'UI)."""
+    body = dict(body or {})
+    body.setdefault("scan_id", rv.STATE.get("scan_id", ""))
+    return client.post(url, json=body)
+
+
 def crc(b: bytes) -> str:
     return f"{zlib.crc32(b) & 0xFFFFFFFF:08x}"
 
@@ -86,7 +93,7 @@ def test_shared_content_is_not_proposed_for_rename(tmp_path, client, same_crc_da
     usa = row(res, "Game (USA)")
     assert usa["status"] == "missing"
     assert "copie nécessaire" in usa["message"]
-    client.post("/api/fix_all")
+    act(client, "/api/fix_all")
     assert (roms / "Game (Europe) (Track 2).bin").exists()
 
 
