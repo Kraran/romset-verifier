@@ -3832,7 +3832,12 @@ def suggest_dat_for_system(system_id: str) -> Dict[str, Any]:
     for p in _iter_dat_files():
         name_l = p.name.lower()
         try:
-            rel_l = str(p.relative_to(DEFAULT_DAT_DIR)).lower()
+            rel = p.relative_to(DEFAULT_DAT_DIR)
+            rel_l = str(rel).lower()
+            # anciennes versions téléchargées volontairement (dat/fbneo/versions/…) :
+            # sélectionnables à la main, jamais proposées automatiquement
+            if rel.parts[:2] == ("fbneo", FBNEO_VERSIONS_DIR):
+                continue
         except ValueError:
             rel_l = name_l
         score = 0
@@ -5179,40 +5184,64 @@ def download_and_extract_pack(pack_id: str) -> Dict[str, Any]:
     }
 
 
+PACK_CACHE_MAX_AGE = 24 * 3600  # les packs No-Intro / Redump sont reconstruits chaque jour
+
+
+def _find_in_pack(zip_path: Path, file_name: str) -> Optional[str]:
+    """Membre du pack dont le nom de fichier est EXACTEMENT file_name (casse ignorée)."""
+    wanted = Path(file_name).name.lower()
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        for name in zf.namelist():
+            if name.endswith("/"):
+                continue
+            if name.lower() == file_name.lower() or Path(name).name.lower() == wanted:
+                return name
+    return None
+
+
 def extract_one_from_pack(pack_id: str, file_name: str) -> Dict[str, Any]:
-    """Extrait un seul DAT depuis le zip en cache (télécharge le pack si absent)."""
+    """
+    Extrait un seul DAT du pack en cache.
+    Le cache est re-téléchargé s'il a plus de 24 h, ou si le DAT demandé n'y est pas
+    (le catalogue est lu en ligne : un nom absent du cache signifie un cache périmé).
+    Correspondance EXACTE uniquement : l'ancien repli par sous-chaîne pouvait donner
+    « Game Boy Color » pour « Game Boy ».
+    """
     if pack_id not in DAT_PACKS:
         raise ValueError(f"Pack inconnu : {pack_id}")
     info = DAT_PACKS[pack_id]
     zip_path = CACHE_DIR / f"{pack_id}.zip"
-    if not zip_path.is_file():
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    def _fresh() -> bool:
+        try:
+            return zip_path.is_file() and (time.time() - zip_path.stat().st_mtime) < PACK_CACHE_MAX_AGE
+        except OSError:
+            return False
+
+    downloaded = False
+    if not _fresh():
         _http_download(info["zip"], zip_path)
+        downloaded = True
+    match = _find_in_pack(zip_path, file_name)
+    if match is None and not downloaded:
+        _http_download(info["zip"], zip_path)
+        match = _find_in_pack(zip_path, file_name)
+    if match is None:
+        raise FileNotFoundError(
+            f"DAT introuvable dans le pack {info['label']} : {file_name} "
+            "(utilisez « Tout télécharger » pour obtenir le pack complet)"
+        )
 
     target = DEFAULT_DAT_DIR / info["subdir"]
     target.mkdir(parents=True, exist_ok=True)
-
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        # Cherche le fichier exact ou par suffixe
-        match = None
-        for name in zf.namelist():
-            if Path(name).name == file_name or name == file_name:
-                match = name
-                break
-        if match is None:
-            # Fuzzy : même préfixe de nom de système
-            for name in zf.namelist():
-                if file_name.lower() in Path(name).name.lower():
-                    match = name
-                    break
-        if match is None:
-            raise FileNotFoundError(f"DAT introuvable dans le pack : {file_name}")
-
-        base = Path(match).name
-        dest = target / base
-        with zf.open(match) as src, open(dest, "wb") as out:
-            out.write(src.read())
-
-    return {"ok": True, "path": str(dest), "file": base, "pack": pack_id}
+    base = Path(match).name
+    dest = target / base
+    part = dest.with_name(dest.name + ".part")
+    with zipfile.ZipFile(zip_path, "r") as zf, zf.open(match) as src, open(part, "wb") as out:
+        shutil.copyfileobj(src, out, _READ_BUF)
+    _safe_replace(part, dest)
+    return {"ok": True, "path": str(dest), "file": base, "pack": pack_id, "refreshed": downloaded}
 
 
 @app.route("/api/dats/local")
@@ -5900,6 +5929,9 @@ def fetch_fbneo_versions(limit: int = 40, force: bool = False) -> List[Dict[str,
     return items[:limit]
 
 
+FBNEO_VERSIONS_DIR = "versions"  # dat/fbneo/versions/<version>/ : jamais proposé automatiquement
+
+
 def download_fbneo_dat_version(version_id: str) -> Dict[str, Any]:
     """
     Télécharge le pack DAT FBNeo.
@@ -5908,8 +5940,6 @@ def download_fbneo_dat_version(version_id: str) -> Dict[str, Any]:
     - tag:xxx → archive de ce tag
     """
     version_id = (version_id or "latest").strip()
-    target = DEFAULT_DAT_DIR / "fbneo"
-    target.mkdir(parents=True, exist_ok=True)
     cache = CACHE_DIR / "fbneo"
     cache.mkdir(parents=True, exist_ok=True)
 
@@ -5946,7 +5976,15 @@ def download_fbneo_dat_version(version_id: str) -> Dict[str, Any]:
         zip_url = f"https://github.com/libretro/FBNeo/archive/refs/tags/{version_id}.zip"
         label = version_id
 
-    zip_path = cache / f"fbneo_{re.sub(r'[^A-Za-z0-9._-]+', '_', label)}.zip"
+    safe_label = re.sub(r'[^A-Za-z0-9._-]+', '_', label)
+    # latest → dat/fbneo/ (DAT courant, proposé automatiquement aux profils) ;
+    # autre version → dat/fbneo/versions/<version>/ : ne remplace plus le DAT courant
+    if label == "latest":
+        target = DEFAULT_DAT_DIR / "fbneo"
+    else:
+        target = DEFAULT_DAT_DIR / "fbneo" / FBNEO_VERSIONS_DIR / safe_label
+    target.mkdir(parents=True, exist_ok=True)
+    zip_path = cache / f"fbneo_{safe_label}.zip"
     _http_download(zip_url, zip_path)
 
     extracted = 0
@@ -6148,30 +6186,38 @@ def generate_mame_listxml_from_exe(mame_exe: Path) -> Dict[str, Any]:
 
     safe_ver = re.sub(r"[^\w.]+", "_", version)
     dest = out_dir / f"MAME {safe_ver}.xml"
+    part = dest.with_name(dest.name + ".part")  # un DAT existant n'est remplacé qu'en cas de succès
 
-    # -listxml peut produire 100+ Mo : stream vers fichier
-    with open(dest, "wb") as out:
+    # -listxml peut produire 100+ Mo : stdout écrit directement dans le fichier par l'OS,
+    # stderr dans un fichier temporaire. Avec deux PIPE dont un seul est lu, MAME se
+    # bloquait dès que ses avertissements remplissaient le tampon de stderr.
+    import tempfile
+    with open(part, "wb") as out, tempfile.TemporaryFile() as errf:
         proc = subprocess.Popen(
             [str(mame_exe), "-listxml"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=out,
+            stderr=errf,
+            stdin=subprocess.DEVNULL,
             cwd=str(mame_exe.parent),
         )
-        assert proc.stdout is not None
-        while True:
-            chunk = proc.stdout.read(1024 * 1024)
-            if not chunk:
-                break
-            out.write(chunk)
-        proc.wait(timeout=600)
-        if proc.returncode not in (0, None):
-            err = (proc.stderr.read() if proc.stderr else b"").decode("utf-8", errors="replace")
-            # certains builds renvoient code non-0 même avec XML OK
-            if dest.stat().st_size < 1000:
-                raise RuntimeError(f"mame -listxml a échoué (code {proc.returncode}) : {err[:500]}")
+        try:
+            proc.wait(timeout=900)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            part.unlink(missing_ok=True)
+            raise RuntimeError("mame -listxml ne s'est pas terminé en 15 minutes")
+        errf.seek(0)
+        err = errf.read(4000).decode("utf-8", errors="replace")
 
-    if dest.stat().st_size < 1000:
+    size = part.stat().st_size
+    if size < 1000:
+        part.unlink(missing_ok=True)
+        if proc.returncode not in (0, None):
+            raise RuntimeError(f"mame -listxml a échoué (code {proc.returncode}) : {err[:500]}")
         raise RuntimeError("XML généré trop petit — échec listxml")
+    # certains builds renvoient un code non nul alors que le XML est complet
+    _safe_replace(part, dest)
 
     return {
         "ok": True,
