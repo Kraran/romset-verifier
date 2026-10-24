@@ -72,6 +72,8 @@ python rom_verifier.py --open
 | Network drives (NAS) | Supported but slower; close Explorer/emulators before repair/rezip |
 | ZIP recompress | Rewrites every `.zip` in the folder (backup recommended on first try) |
 | Security | Server binds to **127.0.0.1** only (local machine) |
+| Deleted files | Never erased: moved to `.rsv_trash/<date>/` inside the ROMs folder (empty it yourself once checked) |
+| Repair | Files not in the DAT are kept in the ZIP; if a wrong file must be removed, the original ZIP is copied to `.rsv_trash/` first |
 
 ---
 
@@ -102,6 +104,13 @@ python rom_verifier.py --port 8080 --open
 ```
 
 No build step for the web UI: edit `_ui.html` and reload.
+
+Tests:
+
+```bash
+pip install pytest
+pytest tests/
+```
 
 Electron (optional):
 
