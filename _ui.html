@@ -1608,7 +1608,22 @@ function hideLoading() {
   document.body.classList.remove('loading-active');
 }
 
+// Identifiant des résultats affichés : renvoyé par chaque scan / chargement de DAT,
+// joint à toute action sur ces résultats. Le serveur refuse une action visant
+// des résultats périmés (autre scan, autre DAT, autre fenêtre).
+let SCAN_ID = '';
+const SCAN_ID_ROUTES = ['/api/rename', '/api/repair', '/api/delete', '/api/delete_selected', '/api/delete_bads', '/api/fix_all'];
+
 async function api(url, opts = {}) {
+  if (SCAN_ID_ROUTES.indexOf(url) !== -1 && typeof opts.body === 'string') {
+    try {
+      const b = JSON.parse(opts.body || '{}');
+      if (b && typeof b === 'object' && !Array.isArray(b)) {
+        b.scan_id = SCAN_ID;
+        opts = Object.assign({}, opts, { body: JSON.stringify(b) });
+      }
+    } catch (e) { /* corps non JSON : envoyé tel quel */ }
+  }
   const r = await fetch(url, opts);
   const ct = (r.headers.get('content-type') || '').toLowerCase();
   if (!ct.includes('application/json')) {
@@ -1620,7 +1635,9 @@ async function api(url, opts = {}) {
       'Aperçu : ' + preview
     );
   }
-  return r.json();
+  const data = await r.json();
+  if (data && typeof data.scan_id === 'string') SCAN_ID = data.scan_id;
+  return data;
 }
 
 function esc(s) {
@@ -2726,7 +2743,7 @@ async function actRename() {
       document.getElementById('loadingSub').textContent = n + ' / ' + idxs.length;
       const r = RESULTS[i];
       const from = r.found || r.path || '';
-      const data = await api('/api/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ index: i }) });
+      const data = await api('/api/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ index: i, path: r.path || '' }) });
       if (data.error) {
         fail++;
         items.push({ ok: false, from: from, error: data.error });
@@ -2836,7 +2853,7 @@ async function actDelete() {
     const data = await api('/api/delete_selected', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ indices: idxs })
+      body: JSON.stringify({ indices: idxs, paths: idxs.map(function (i) { return RESULTS[i].path || ''; }) })
     });
     if (data.error) {
       toast(data.error, false);
@@ -2896,7 +2913,7 @@ async function actFixAll() {
       n++;
       document.getElementById('loadingSub').textContent = n + ' / ' + pending.length;
       const from = r.found || r.path || '';
-      const data = await api('/api/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ index: i }) });
+      const data = await api('/api/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ index: i, path: r.path || '' }) });
       if (data.error) {
         fail++;
         items.push({ ok: false, from: from, error: data.error });
@@ -2944,7 +2961,7 @@ async function actDeleteBads() {
       n++;
       document.getElementById('loadingSub').textContent = n + ' / ' + pending.length;
       const from = r.found || r.path || '';
-      const data = await api('/api/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ index: i }) });
+      const data = await api('/api/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ index: i, path: r.path || '' }) });
       if (data.error) {
         fail++;
         items.push({ ok: false, from: from, error: data.error });

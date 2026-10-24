@@ -6,6 +6,7 @@ Interface locale moderne (liste + détail), support loose + ZIP.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import io
 import json
@@ -3661,7 +3662,52 @@ def profile_summary(profile: Dict[str, Any]) -> Dict[str, Any]:
 
 
 
-SCAN_LOCK = threading.Lock()
+# Un seul verrou pour tout ce qui lit/modifie STATE ou réécrit des fichiers :
+# scan, chargement DAT, réparation, renommage, suppression, recompression.
+# (Flask tourne en threaded=True.)
+STATE_LOCK = threading.Lock()
+_BUSY_MSG = "Une opération est déjà en cours (scan, réparation…) : réessayez dans un instant."
+
+
+def _exclusive(wait: float = 0.0):
+    """Exécute la route sous STATE_LOCK. wait=0 : refus immédiat si occupé ; sinon attente bornée."""
+    def deco(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            got = STATE_LOCK.acquire(timeout=wait) if wait > 0 else STATE_LOCK.acquire(blocking=False)
+            if not got:
+                return jsonify({"error": _BUSY_MSG, "busy": True})
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                STATE_LOCK.release()
+        return wrapper
+    return deco
+
+
+def _new_scan_id() -> str:
+    """Change à chaque scan / DAT chargé : invalide les index envoyés par une fenêtre périmée."""
+    STATE["scan_id"] = f"{time.time_ns():x}"
+    return STATE["scan_id"]
+
+
+_STALE_MSG = "Résultats périmés (un autre scan ou DAT a été chargé depuis) : relancez le scan."
+
+
+def _stale(body: Dict) -> bool:
+    """True si la requête ne vise pas les résultats actuellement en mémoire."""
+    return (body.get("scan_id") or "") != (STATE.get("scan_id") or "")
+
+
+def _norm_path_s(p: str) -> str:
+    return os.path.normcase((p or "").replace("\\", "/")).rstrip("/")
+
+
+def _row_mismatch(row: Dict, expected_path: Optional[str]) -> bool:
+    """True si le client attendait un autre fichier pour cette ligne (None = pas de contrôle)."""
+    if expected_path is None:
+        return False
+    return _norm_path_s(row.get("path") or "") != _norm_path_s(expected_path)
 
 def _repair_log(msg: str) -> None:
     """Journal append-only pour diagnostiquer les repairs (repair.log)."""
@@ -3675,10 +3721,42 @@ def _repair_log(msg: str) -> None:
 
 STATE: Dict[str, Any] = {
     "header": {}, "rom_map": {}, "games_list": [], "size_set": set(), "hash_mode": "crc", "dat_mode": "standard", "results": [],
-    "dat_path": "", "roms_path": str(DEFAULT_ROMS_DIR),
+    "dat_path": "", "roms_path": str(DEFAULT_ROMS_DIR), "scan_id": "",
 }
 
 app = Flask(__name__)
+
+_LOCAL_HOSTNAMES = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def _hostname(netloc: str) -> str:
+    """Nom d'hôte sans le port ; gère [::1]:8080."""
+    netloc = (netloc or "").strip().lower()
+    if netloc.startswith("["):
+        return netloc[1:netloc.find("]")] if "]" in netloc else netloc
+    return netloc.rsplit(":", 1)[0] if netloc.count(":") == 1 else netloc
+
+
+@app.before_request
+def _guard_local_only():
+    """
+    Le serveur écoute sur 127.0.0.1, mais un site web visité peut quand même l'atteindre :
+    - DNS rebinding → l'en-tête Host porte le domaine de l'attaquant : refusé ;
+    - requête intersite (formulaire, fetch) → Origin / Sec-Fetch-Site étrangers : refusé
+      pour toute requête qui modifie quelque chose.
+    """
+    if _hostname(request.host) not in _LOCAL_HOSTNAMES:
+        return jsonify({"error": "Hôte non autorisé"}), 403
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return None
+    origin = request.headers.get("Origin")
+    if origin is not None:
+        o_host = (urllib.parse.urlsplit(origin).hostname or "").lower() if origin != "null" else ""
+        if o_host not in _LOCAL_HOSTNAMES:
+            return jsonify({"error": "Origine non autorisée"}), 403
+    if (request.headers.get("Sec-Fetch-Site") or "").lower() == "cross-site":
+        return jsonify({"error": "Requête intersite refusée"}), 403
+    return None
 
 @app.after_request
 def _no_cache(resp):
@@ -3790,8 +3868,9 @@ def api_i18n_list():
     return jsonify({"ok": True, "languages": langs or ["fr", "en"]})
 
 @app.route("/api/load_dat", methods=["POST"])
+@_exclusive()
 def api_load_dat():
-    path = Path(request.json.get("path", "").strip())
+    path = Path(((request.get_json(silent=True) or {}).get("path") or "").strip())
     if not path.is_file():
         return jsonify({"error": f"Fichier introuvable : {path}"})
     try:
@@ -3806,6 +3885,7 @@ def api_load_dat():
         STATE["results"] = []
         return jsonify({
             "ok": True,
+            "scan_id": _new_scan_id(),
             "name": header.get("name", path.name),
             "description": header.get("description", ""),
             "count": len(games_list),
@@ -3861,24 +3941,21 @@ def api_result_detail():
     return jsonify({"ok": True, "row": public})
 
 @app.route("/api/scan", methods=["POST"])
+@_exclusive()
 def api_scan():
     if not STATE.get("games_list"):
         return jsonify({"error": "Chargez d'abord un DAT"})
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     path = Path((body.get("path") or "").strip())
     if not path.is_dir():
         return jsonify({"error": f"Dossier introuvable : {path}"})
-    if not SCAN_LOCK.acquire(blocking=False):
-        return jsonify({"error": "Un scan est déjà en cours"})
-    try:
-        return _api_scan_body(path, body)
-    finally:
-        SCAN_LOCK.release()
+    return _api_scan_body(path, body)
 
 
 def _api_scan_body(path: Path, body: dict):
     # Nouveau scan : vider l'ancien résultat côté serveur immédiatement
     STATE["results"] = []
+    _new_scan_id()
     # Option sous-dossiers : 0 (défaut), 1 ou 2
     try:
         max_depth = int(body.get("max_depth") or 0)
@@ -3909,6 +3986,7 @@ def _api_scan_body(path: Path, body: dict):
         public = _public_results(results)
         return jsonify({
             "ok": True,
+            "scan_id": _new_scan_id(),
             "results": public,
             "counts": _counts(results),
             "max_depth": effective_depth,
@@ -3919,8 +3997,11 @@ def _api_scan_body(path: Path, body: dict):
         return jsonify({"error": str(e)})
 
 @app.route("/api/rename", methods=["POST"])
+@_exclusive(wait=5)
 def api_rename():
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
+    if _stale(body):
+        return jsonify({"error": _STALE_MSG, "stale": True})
     idx = body.get("index", -1)
     try:
         idx = int(idx)
@@ -3930,6 +4011,8 @@ def api_rename():
     if idx < 0 or idx >= len(results):
         return jsonify({"error": "Index invalide"})
     row = results[idx]
+    if _row_mismatch(row, body.get("path")):
+        return jsonify({"error": _STALE_MSG, "stale": True})
     ok, msg = do_rename(row)
     if not ok:
         return jsonify({"error": msg})
@@ -3943,9 +4026,12 @@ def api_rename():
 
 
 @app.route("/api/repair", methods=["POST"])
+@_exclusive(wait=5)
 def api_repair():
     """Répare une ou plusieurs entrées (indices ou game/path). Reconstruction ZIP non-merged."""
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
+    if _stale(body):
+        return jsonify({"error": _STALE_MSG, "stale": True, "repaired": 0, "failed": []})
     results = STATE.get("results") or []
     indices = body.get("indices")
     if indices is None and body.get("index") is not None:
@@ -3977,6 +4063,10 @@ def api_repair():
             failed.append({"index": idx, "error": "Index hors limites"})
             continue
         row = results[idx]
+        # Une seule ligne visée avec son chemin : vérifier qu'il s'agit bien d'elle
+        if len(indices) == 1 and "path" in body and _row_mismatch(row, body.get("path")):
+            failed.append({"index": idx, "error": _STALE_MSG})
+            continue
         try:
             ok, msg = do_repair(row)
         except Exception as e:
@@ -4193,14 +4283,20 @@ def recompress_zip_folder(
 
 
 @app.route("/api/delete", methods=["POST"])
+@_exclusive(wait=5)
 def api_delete():
+    body = request.get_json(silent=True) or {}
+    if _stale(body):
+        return jsonify({"error": _STALE_MSG, "stale": True})
     try:
-        idx = int((request.get_json(silent=True) or {}).get("index", -1))
+        idx = int(body.get("index", -1))
     except (TypeError, ValueError):
         return jsonify({"error": "Index invalide"})
     if idx < 0 or idx >= len(STATE["results"]):
         return jsonify({"error": "Index invalide"})
     row = STATE["results"][idx]
+    if _row_mismatch(row, body.get("path")):
+        return jsonify({"error": _STALE_MSG, "stale": True})
     ok, msg = do_delete(row)
     if not ok:
         return jsonify({"error": msg})
@@ -4241,6 +4337,7 @@ def api_tools_rezip_list():
 
 
 @app.route("/api/tools/rezip", methods=["POST"])
+@_exclusive(wait=5)
 def api_tools_rezip():
     """
     Recompresse des ZIP en DEFLATE niveau 9 (max), sans 7-Zip.
@@ -4352,7 +4449,10 @@ def api_tools_rezip():
 
 
 @app.route("/api/fix_all", methods=["POST"])
+@_exclusive(wait=5)
 def api_fix_all():
+    if _stale(request.get_json(silent=True) or {}):
+        return jsonify({"error": _STALE_MSG, "stale": True})
     results = STATE.get("results") or []
     rows_out = []
     n = 0
@@ -4373,15 +4473,20 @@ def api_fix_all():
 
 
 @app.route("/api/delete_selected", methods=["POST"])
+@_exclusive(wait=5)
 def api_delete_selected():
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
+    if _stale(body):
+        return jsonify({"error": _STALE_MSG, "stale": True})
     indices = body.get("indices") or []
+    paths = body.get("paths")  # optionnel : chemin attendu pour chaque index
+    if paths is not None and (not isinstance(paths, list) or len(paths) != len(indices)):
+        return jsonify({"error": "paths doit avoir la même longueur que indices"})
     results = STATE.get("results") or []
     deleted = 0
     failed = []
     rows_out = []
-    # Trier décroissant pour stabilité d'index (pas de retrait de liste)
-    for idx in indices:
+    for pos, idx in enumerate(indices):
         try:
             idx = int(idx)
         except (TypeError, ValueError):
@@ -4391,6 +4496,9 @@ def api_delete_selected():
             failed.append({"index": idx, "error": "Index hors limites"})
             continue
         row = results[idx]
+        if paths is not None and _row_mismatch(row, paths[pos]):
+            failed.append({"index": idx, "error": _STALE_MSG, "path": row.get("path") or ""})
+            continue
         ok, msg = do_delete(row)
         if ok:
             deleted += 1
@@ -4411,7 +4519,10 @@ def api_delete_selected():
 
 
 @app.route("/api/delete_bads", methods=["POST"])
+@_exclusive(wait=5)
 def api_delete_bads():
+    if _stale(request.get_json(silent=True) or {}):
+        return jsonify({"error": _STALE_MSG, "stale": True})
     results = STATE.get("results") or []
     rows_out = []
     n = 0
@@ -4912,6 +5023,7 @@ def api_mame_info():
 
 
 @app.route("/api/mame/enrich", methods=["POST"])
+@_exclusive()
 def api_mame_enrich():
     """
     Enrichit les résultats du scan arcade avec les titres ADB (Nom complet).
@@ -6779,6 +6891,7 @@ def api_profiles_reset_dats(profile_id: str):
 
 
 @app.route("/api/profiles/<profile_id>/scan_system", methods=["POST"])
+@_exclusive()
 def api_profiles_scan_system(profile_id: str):
     """
     Charge le DAT du système, scanne son dossier, met à jour last_counts dans le profil.
@@ -6822,9 +6935,10 @@ def api_profiles_scan_system(profile_id: str):
     if not rpath.is_dir():
         return jsonify({"error": f"Dossier ROMs introuvable : {roms_path}"})
 
-    if not SCAN_LOCK.acquire(blocking=False):
-        return jsonify({"error": "Un scan est déjà en cours"})
     try:
+        # Anciens résultats invalidés d'emblée (même si le scan échoue ensuite)
+        STATE["results"] = []
+        _new_scan_id()
         header, rom_map, games_list, size_set, hash_mode = parse_dat(dpath)
         STATE["header"] = header
         STATE["rom_map"] = rom_map
@@ -6849,6 +6963,7 @@ def api_profiles_scan_system(profile_id: str):
         public = _public_results(results)
         return jsonify({
             "ok": True,
+            "scan_id": _new_scan_id(),
             "system_id": system_id,
             "results": public,
             "counts": counts,
@@ -6863,15 +6978,10 @@ def api_profiles_scan_system(profile_id: str):
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)})
-    finally:
-        try:
-            SCAN_LOCK.release()
-        except RuntimeError:
-            pass
 
 
 
-@app.route("/api/shutdown", methods=["POST", "GET"])
+@app.route("/api/shutdown", methods=["POST"])
 def api_shutdown():
     """Arrêt propre du serveur (bouton Quitter) + fenêtre application."""
     def _stop():

@@ -20,6 +20,13 @@ B = b"B" * 1024
 R = b"R" * 4096
 
 
+def act(client, url: str, body: dict = None):
+    """Action sur les résultats du dernier scan (joint le scan_id, comme l'UI)."""
+    body = dict(body or {})
+    body.setdefault("scan_id", rv.STATE.get("scan_id", ""))
+    return client.post(url, json=body)
+
+
 def crc(b: bytes) -> str:
     return f"{zlib.crc32(b) & 0xFFFFFFFF:08x}"
 
@@ -144,7 +151,7 @@ def test_delete_bads_keeps_good_rom_in_same_zip(tmp_path, client):
     roms.mkdir()
     z = mkzip(roms / "Game (USA).zip", {"Game (USA).nes": R, "info.txt": b"x" * 10})
     scan(client, roms)
-    r = client.post("/api/delete_bads").get_json()
+    r = act(client, "/api/delete_bads").get_json()
     assert r["deleted"] == 1
     assert names(z) == ["Game (USA).nes"]
     assert "info.txt" in trash_files(roms)
@@ -160,7 +167,7 @@ def test_delete_bads_skips_orphan_bios_zip(tmp_path, client):
     mkzip(roms / "neogeo.zip", {"x.bin": b"Z" * 100})
     res = scan(client, roms)
     assert any(x["found"] == "neogeo.zip" and x["mtype"] == "extra" for x in res)
-    client.post("/api/delete_bads")
+    act(client, "/api/delete_bads")
     assert (roms / "neogeo.zip").exists()
 
 
@@ -171,7 +178,7 @@ def test_delete_bads_skips_error_rows(tmp_path, client):
     (roms / "broken.zip").write_bytes(b"pas un zip")
     res = scan(client, roms)
     assert any(x["status"] == "error" for x in res)
-    client.post("/api/delete_bads")
+    act(client, "/api/delete_bads")
     assert (roms / "broken.zip").exists()
 
 
@@ -182,7 +189,7 @@ def test_delete_goes_to_trash(tmp_path, client):
     (roms / "unknown.nes").write_bytes(b"U" * 4096)
     res = scan(client, roms)
     idx = next(i for i, x in enumerate(res) if x["found"] == "unknown.nes")
-    r = client.post("/api/delete", json={"index": idx}).get_json()
+    r = act(client, "/api/delete", {"index": idx}).get_json()
     assert r.get("ok"), r
     assert not (roms / "unknown.nes").exists()
     assert trash_files(roms) == ["unknown.nes"]
@@ -201,7 +208,7 @@ def test_repair_keeps_members_not_in_dat(tmp_path, client):
     })
     res = scan(client, roms)
     idx = next(i for i, x in enumerate(res) if x["game"] == "g1")
-    r = client.post("/api/repair", json={"indices": [idx]}).get_json()
+    r = act(client, "/api/repair", {"indices": [idx]}).get_json()
     assert r["repaired"] == 1, r
     assert names(z) == ["a.bin", "b.bin", "device_rom.bin", "readme.txt"]
     with zipfile.ZipFile(z) as zf:
@@ -216,7 +223,7 @@ def test_repair_backs_up_dropped_bad_member(tmp_path, client):
     z = mkzip(roms / "g1.zip", {"a.bin": b"X" * 1024, "good_a.bin": A, "b.bin": B})
     res = scan(client, roms)
     idx = next(i for i, x in enumerate(res) if x["game"] == "g1")
-    client.post("/api/repair", json={"indices": [idx]})
+    act(client, "/api/repair", {"indices": [idx]})
     with zipfile.ZipFile(z) as zf:
         assert zf.read("a.bin") == A
     backups = list((roms / rv.TRASH_DIR_NAME).rglob("g1*.zip"))
@@ -233,7 +240,7 @@ def test_repair_locked_keeps_original(tmp_path, client, monkeypatch):
     res = scan(client, roms)
     idx = next(i for i, x in enumerate(res) if x["game"] == "g1")
     monkeypatch.setattr(rv.os, "replace", _always_locked)
-    r = client.post("/api/repair", json={"indices": [idx]}).get_json()
+    r = act(client, "/api/repair", {"indices": [idx]}).get_json()
     monkeypatch.undo()
     assert r["repaired"] == 0
     assert names(z) == ["b.bin", "wrong_a.bin"]
