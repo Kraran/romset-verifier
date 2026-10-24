@@ -202,6 +202,8 @@
   "scan.subdirs": "Sous-dossiers",
   "scan.subdirs_title": "Inclure les fichiers dans les sous-dossiers (multi-disques, CHD…). Profondeur 1 ou 2. Désactivé par défaut.",
   "scan.depth_title": "Profondeur de parcours",
+  "scan.deep": "Vérification approfondie",
+  "scan.deep_title": "Décompresse chaque fichier des archives pour détecter les données corrompues (beaucoup plus lent)",
   "detail.rename": "Renommer",
   "detail.repair": "Réparer",
   "action.repair": "🔧 Réparer sélection",

@@ -202,6 +202,8 @@
   "scan.subdirs": "Subfolders",
   "scan.subdirs_title": "Include files in subfolders (multi-disc, CHD…). Depth 1 or 2. Off by default.",
   "scan.depth_title": "Scan depth",
+  "scan.deep": "Grundlig kontroll",
+  "scan.deep_title": "Packar upp varje fil i arkiven för att hitta skadade data (mycket långsammare)",
   "detail.rename": "Byt namn",
   "detail.repair": "Reparera",
   "action.repair": "🔧 Reparera urval",

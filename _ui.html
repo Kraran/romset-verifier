@@ -751,6 +751,10 @@ body.arcade-mode th.arcade-only, body.arcade-mode td.arcade-only { display: tabl
         <option value="1">1</option>
         <option value="2">2</option>
       </select>
+      <label class="subdir-opt" title="Décompresse chaque fichier des archives pour détecter les données corrompues (beaucoup plus lent)" data-i18n-title="scan.deep_title">
+        <input type="checkbox" id="optDeep">
+        <span data-i18n="scan.deep">Vérification approfondie</span>
+      </label>
       <button type="button" id="btnEnrichAdb" data-i18n="header.adb" data-i18n-title="header.adb_title" onclick="enrichAdb()" title="Récupérer les noms complets via Arcade Database (ADB)" style="display:none">🌐 Noms ADB</button>
       <button type="button" data-i18n="header.tools" onclick="openToolsModal()" title="Outils">🛠 Outils</button>
       <button type="button" class="red" data-i18n="header.quit" onclick="quitApp()" title="Fermer l'application et arrêter le serveur">⏻ Quitter</button>
@@ -2262,6 +2266,12 @@ function updateSummary(c) {
   if (chipErr) chipErr.style.display = ((c.error || 0) > 0) ? '' : 'none';
 }
 
+/** Vérification approfondie : décompresser les archives pour détecter la corruption. */
+function isDeepScan() {
+  const el = document.getElementById('optDeep');
+  return !!(el && el.checked);
+}
+
 function getScanMaxDepth() {
   const on = document.getElementById('optSubdirs');
   const depthEl = document.getElementById('optSubdirDepth');
@@ -2411,7 +2421,7 @@ async function doScan() {
     const data = await api('/api/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: path, max_depth: max_depth })
+      body: JSON.stringify({ path: path, max_depth: max_depth, deep: isDeepScan() })
     });
     if (data.error) {
       if (st) st.textContent = data.error;
@@ -4252,7 +4262,7 @@ async function scanOneSystem(systemId) {
     const data = await api('/api/profiles/' + encodeURIComponent(CURRENT_PROFILE.id) + '/scan_system', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ system_id: systemId, max_depth: max_depth })
+      body: JSON.stringify({ system_id: systemId, max_depth: max_depth, deep: isDeepScan() })
     });
     if (data.error) { toast(data.error, false); return; }
     CURRENT_PROFILE = data.profile;

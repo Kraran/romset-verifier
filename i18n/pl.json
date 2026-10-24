@@ -202,6 +202,8 @@
   "scan.subdirs": "Subfolders",
   "scan.subdirs_title": "Include files in subfolders (multi-disc, CHD…). Depth 1 or 2. Off by default.",
   "scan.depth_title": "Scan depth",
+  "scan.deep": "Dokładna weryfikacja",
+  "scan.deep_title": "Rozpakowuje każdy plik w archiwach, aby wykryć uszkodzone dane (znacznie wolniej)",
   "detail.rename": "Zmień nazwę",
   "detail.repair": "Napraw",
   "action.repair": "🔧 Napraw zaznaczone",

@@ -955,9 +955,24 @@ def _hash_loose_task(args: Tuple) -> Dict:
         }
 
 
+def _zip_member_corrupt(zf: zipfile.ZipFile, info: zipfile.ZipInfo) -> Optional[str]:
+    """
+    Vérification approfondie : décompresse le membre (en flux) ; zipfile contrôle le CRC
+    réel des données contre celui de l'en-tête. None si OK, sinon le message d'erreur.
+    """
+    try:
+        with zf.open(info, "r") as f:
+            while f.read(_READ_BUF):
+                pass
+        return None
+    except (zipfile.BadZipFile, zlib.error, EOFError, OSError, ValueError) as e:
+        return str(e) or e.__class__.__name__
+
+
 def _hash_zip_task(args: Tuple) -> List[Dict]:
-    """Worker : ZIP — CRC ou SHA1 selon mode."""
-    path_str, size_set, hash_mode = args
+    """Worker : ZIP — CRC ou SHA1 selon mode. deep=True : données décompressées et contrôlées."""
+    path_str, size_set, hash_mode = args[:3]
+    deep = bool(args[3]) if len(args) > 3 else False
     fpath = Path(path_str)
     out: List[Dict] = []
     try:
@@ -1029,15 +1044,20 @@ def _hash_zip_task(args: Tuple) -> List[Dict]:
                         }, "error": None, "size_mismatch": True,
                     })
                     continue
-                # CRC catalogue central — pas de décompression
+                # CRC catalogue central — pas de décompression (sauf vérification approfondie)
                 crc = info.CRC & 0xFFFFFFFF
-                out.append({
+                row = {
                     "path": path_str, "found": label, "is_zip": True,
                     "zip_member": info.filename, "hashes": {
                         "size": info.file_size, "crc": f"{crc:08x}", "crc_int": crc,
                         "md5": "", "sha1": "",
                     }, "error": None,
-                })
+                }
+                if deep:
+                    bad = _zip_member_corrupt(zf, info)
+                    if bad:
+                        row["corrupt"] = bad
+                out.append(row)
     except zipfile.BadZipFile:
         out.append({
             "path": path_str, "found": fpath.name, "is_zip": True,
@@ -1068,7 +1088,8 @@ def _list_7z(path: Path) -> List[Tuple[str, int, Optional[int]]]:
 
 def _hash_7z_task(args: Tuple) -> List[Dict]:
     """Worker : .7z — CRC lus dans l'en-tête (pas de décompression), comme pour les ZIP."""
-    path_str, size_set, hash_mode = args
+    path_str, size_set, hash_mode = args[:3]
+    deep = bool(args[3]) if len(args) > 3 else False
     fpath = Path(path_str)
 
     def _row(found, member="", hashes=None, error=None, **extra):
@@ -1085,6 +1106,14 @@ def _hash_7z_task(args: Tuple) -> List[Dict]:
         return [_row(fpath.name, error=f"7z illisible : {e}")]
     if not members:
         return [_row(fpath.name, error="7z vide")]
+    corrupt_member: Optional[str] = None
+    corrupt_all: Optional[str] = None
+    if deep:
+        try:
+            with py7zr.SevenZipFile(str(fpath), "r") as z:
+                corrupt_member = z.testzip()  # 1er fichier dont le CRC réel diffère, ou None
+        except Exception as e:
+            corrupt_all = str(e) or e.__class__.__name__
     out: List[Dict] = []
     for name, size, crc in members:
         label = f"{fpath.name} → {name}"
@@ -1098,9 +1127,12 @@ def _hash_7z_task(args: Tuple) -> List[Dict]:
             out.append(_row(label, name, error="CRC absent de l'en-tête 7z"))
         else:
             crc &= 0xFFFFFFFF
+            extra = {}
+            if corrupt_all or (corrupt_member and corrupt_member == name):
+                extra["corrupt"] = corrupt_all or "CRC des données ≠ CRC de l'en-tête"
             out.append(_row(label, name, hashes={
                 "size": size, "crc": f"{crc:08x}", "crc_int": crc, "md5": "", "sha1": "",
-            }))
+            }, **extra))
     return out
 
 
@@ -1154,6 +1186,7 @@ def _collect_files(
     hash_mode: str = "crc",
     max_depth: int = 0,
     skip_zips: bool = False,
+    deep: bool = False,
 ) -> List[Dict]:
     loose: List[str] = []
     zips: List[str] = []
@@ -1205,14 +1238,14 @@ def _collect_files(
                 inventory.append(result)
 
     if zips:
-        tasks = [(p, size_set, hash_mode) for p in zips]
+        tasks = [(p, size_set, hash_mode, deep) for p in zips]
         chunk = 4 if len(zips) > 32 else 1
         with ThreadPoolExecutor(max_workers=workers) as ex:
             for batch in ex.map(_hash_zip_task, tasks, chunksize=chunk):
                 inventory.extend(batch)
 
     if sevens:
-        tasks = [(p, size_set, hash_mode) for p in sevens]
+        tasks = [(p, size_set, hash_mode, deep) for p in sevens]
         with ThreadPoolExecutor(max_workers=workers) as ex:
             for batch in ex.map(_hash_7z_task, tasks, chunksize=4 if len(sevens) > 32 else 1):
                 inventory.extend(batch)
@@ -1228,10 +1261,13 @@ def _collect_files(
 
 
 
-def _zip_catalog(zpath: Path) -> Dict[str, Any]:
+def _zip_catalog(zpath: Path, deep: bool = False) -> Dict[str, Any]:
     """
     Lecture unique du catalogue central d'un ZIP (sans décompresser).
-    Retourne path, name, crc_idx, name_idx, members, error.
+    Retourne path, name, crc_idx, name_idx, members, corrupt, error.
+    deep=True : chaque membre est décompressé ; un membre dont les données ne
+    correspondent pas au CRC de l'en-tête va dans corrupt {nom: message} et n'est
+    ni indexé par CRC ni proposé comme source (name_idx le garde avec crc=-1).
     """
     path_str = str(zpath)
     out: Dict[str, Any] = {
@@ -1240,6 +1276,7 @@ def _zip_catalog(zpath: Path) -> Dict[str, Any]:
         "crc_idx": {},
         "name_idx": {},
         "members": [],
+        "corrupt": {},
         "error": None,
     }
     try:
@@ -1250,6 +1287,14 @@ def _zip_catalog(zpath: Path) -> Dict[str, Any]:
                 crc = info.CRC & 0xFFFFFFFF
                 fn = info.filename
                 sz = info.file_size
+                if deep:
+                    bad = _zip_member_corrupt(zf, info)
+                    if bad:
+                        out["corrupt"][fn] = bad
+                        out["name_idx"][fn.lower()] = (fn, sz, -1)
+                        base = fn.rsplit("/", 1)[-1].lower()
+                        out["name_idx"].setdefault(base, (fn, sz, -1))
+                        continue
                 out["crc_idx"].setdefault(crc, []).append((fn, sz))
                 out["name_idx"][fn.lower()] = (fn, sz, crc)
                 base = fn.rsplit("/", 1)[-1].lower()
@@ -1263,8 +1308,8 @@ def _zip_catalog(zpath: Path) -> Dict[str, Any]:
     return out
 
 
-def _zip_catalog_task(path_str: str) -> Dict[str, Any]:
-    return _zip_catalog(Path(path_str))
+def _zip_catalog_task(path_str: str, deep: bool = False) -> Dict[str, Any]:
+    return _zip_catalog(Path(path_str), deep=deep)
 
 
 def _zip_crc_index(zpath: Path) -> Dict[int, List[Tuple[str, int]]]:
@@ -1480,6 +1525,7 @@ def _scan_one_mame_machine(args: Tuple) -> Dict:
     bad_roms = []
     found_count = 0
     matched_members: set = set()  # actual zip member names matched
+    reported_corrupt: set = set()  # membres corrompus déjà signalés sur une ROM
 
     # Noms DAT requis (pour ne jamais « voler » un membre qui est déjà le bon nom d'une autre ROM)
     required_names = {
@@ -1656,6 +1702,16 @@ def _scan_one_mame_machine(args: Tuple) -> Dict:
                     size_expected=size_e, size_found=sz,
                     message="OK",
                 ))
+            elif found_crc < 0:
+                # membre au bon nom mais données corrompues (vérification approfondie)
+                reported_corrupt.add(fn)
+                components.append(_comp(
+                    "rom", rname, "bad_crc",
+                    found=fn, crc_expected=crc_s, crc_found="",
+                    size_expected=size_e, size_found=sz,
+                    message="données corrompues (vérification approfondie)",
+                ))
+                bad_roms.append(rname)
             else:
                 components.append(_comp(
                     "rom", rname, "bad_crc",
@@ -1700,6 +1756,14 @@ def _scan_one_mame_machine(args: Tuple) -> Dict:
             crc_found=f"{crc:08x}",
             size_found=sz,
             message="fichier hors DAT",
+        ))
+    # Membres corrompus non rattachés à une ROM du DAT par leur nom
+    for fn, err in (catalog.get("corrupt") or {}).items():
+        if fn in reported_corrupt:
+            continue
+        components.append(_comp(
+            "extra", "", "extra", found=fn,
+            message=f"données corrompues (vérification approfondie) : {err}",
         ))
 
     parts = []
@@ -1845,7 +1909,9 @@ def _annotate_available_roms(results: List[Dict], pool: Dict[int, List[Dict[str,
                 pass  # status global inchangé (incomplete reste incomplete)
 
 
-def scan_mame_nonmerged(rom_dir: Path, machines: List[Dict], max_depth: int = 0) -> List[Dict]:
+def scan_mame_nonmerged(
+    rom_dir: Path, machines: List[Dict], max_depth: int = 0, deep: bool = False,
+) -> List[Dict]:
     """Scan romset MAME non-merged : 1 ZIP par machine, CRC via catalogue ZIP.
     max_depth>0 autorise les zip dans des sous-dossiers (rare, ex. classement A-Z).
     Post-passe : ROMs manquantes trouvées dans d'autres ZIP → status 'available'.
@@ -1877,7 +1943,7 @@ def scan_mame_nonmerged(rom_dir: Path, machines: List[Dict], max_depth: int = 0)
     workers = max(4, min(_MAX_WORKERS, (os.cpu_count() or 4) * 2))
     if zip_paths:
         with ThreadPoolExecutor(max_workers=workers) as ex:
-            for cat in ex.map(_zip_catalog_task, zip_paths, chunksize=4):
+            for cat in ex.map(functools.partial(_zip_catalog_task, deep=deep), zip_paths, chunksize=4):
                 catalog_by_path[cat["path"]] = cat
 
     # Pool CRC construit pendant le catalogue
@@ -1932,6 +1998,14 @@ def scan_mame_nonmerged(rom_dir: Path, machines: List[Dict], max_depth: int = 0)
 
         by_game = { (m.get("game") or ""): m for m in machines }
         reassigned: List[Tuple[int, Dict]] = []
+
+        # Tous les couples (machine manquante, ZIP orphelin) plausibles, avec leur score :
+        #  - recouvrement des ROM requises (≥ 80 %, 1.0 si empreinte exacte),
+        #  - part du ZIP qui appartient à cette machine (départage parent / clone : le ZIP
+        #    d'un clone contient des ROM propres au clone, absentes du parent).
+        # Attribution GLOBALE des meilleurs couples d'abord : un parent ne peut plus
+        # « voler » le ZIP mal nommé d'un clone parce qu'il est traité avant lui.
+        cand_list: List[Tuple[Tuple[float, float], int, str, Dict]] = []
         for i, row in enumerate(results):
             if (row.get("status") or "") != "missing":
                 continue
@@ -1946,35 +2020,43 @@ def scan_mame_nonmerged(rom_dir: Path, machines: List[Dict], max_depth: int = 0)
             if not req:
                 continue
             need = frozenset(req)
-            # Score de recouvrement CRC : exact (1.0) prioritaire, sinon meilleur ≥ 80 %
-            best_path = None
-            best_score = 0.0
-            tied = False
             seen_p = set()
-            for c in req:
+            for c in need:
                 for fp, path in crc_to_orphans.get(c, []):
-                    if path in seen_p or path.lower() in used_zip_paths:
+                    if path in seen_p:
                         continue
                     seen_p.add(path)
                     inter = len(need & fp)
-                    if inter == 0:
+                    score = 1.0 if fp == need else inter / float(len(need))
+                    if score < 0.8:
                         continue
-                    score = inter / float(len(need))
-                    # bonus si empreinte exacte
-                    if fp == need:
-                        score = 1.0
-                    if score > best_score + 1e-9:
-                        best_score = score
-                        best_path = path
-                        tied = False
-                    elif abs(score - best_score) < 1e-9 and path != best_path:
-                        tied = True
-            # Exiger un match unique et suffisamment complet
-            if tied or not best_path or best_score < 0.8:
+                    zip_cov = inter / float(len(fp))
+                    cand_list.append(((round(score, 9), round(zip_cov, 9)), i, path, machine))
+
+        cand_list.sort(key=lambda t: t[0], reverse=True)
+        keys_by_path: Dict[str, List[Tuple[Tuple[float, float], int]]] = {}
+        keys_by_row: Dict[int, List[Tuple[Tuple[float, float], str]]] = {}
+        for key, i, path, _m in cand_list:
+            keys_by_path.setdefault(path, []).append((key, i))
+            keys_by_row.setdefault(i, []).append((key, path))
+
+        taken_rows: set = set()
+        taken_paths: set = set()
+        for key, i, path, machine in cand_list:
+            if i in taken_rows or path in taken_paths:
                 continue
-            zpath_str = best_path
+            # Égalité parfaite → ambigu : on n'associe pas (comme avant), sauf si le rival
+            # a déjà été attribué ailleurs
+            if any(k == key and j != i and j not in taken_rows for k, j in keys_by_path[path]):
+                continue
+            if any(k == key and pp != path and pp not in taken_paths for k, pp in keys_by_row[i]):
+                continue
+            taken_rows.add(i)
+            taken_paths.add(path)
+            game = (results[i].get("game") or "").strip()
+            zpath_str = path
             cat = catalog_by_path.get(zpath_str)
-            new_row = _scan_one_mame_machine((machine, zpath_str, cat))
+            new_row = _scan_one_mame_machine((machine, zpath_str, cat, str(rom_dir)))
             # ZIP mal nommé → toujours rename si le contenu est utilisable
             zname = Path(zpath_str).name
             if zname.lower() != (game + ".zip").lower():
@@ -2043,10 +2125,12 @@ def scan_roms(
     hash_mode: str = "crc",
     dat_mode: str = "standard",
     max_depth: int = 0,
+    deep: bool = False,
 ) -> List[Dict]:
+    """deep=True : contenu des archives décompressé et contrôlé (lent, détecte la corruption)."""
     max_depth = max(0, min(int(max_depth or 0), 2))
     if dat_mode == "arcade":
-        return scan_mame_nonmerged(rom_dir, games_list, max_depth=max_depth)
+        return scan_mame_nonmerged(rom_dir, games_list, max_depth=max_depth, deep=deep)
     if size_set is None:
         size_set = {g["size"] for g in games_list if g.get("size")}
 
@@ -2062,7 +2146,7 @@ def scan_roms(
 
     results: List[Dict] = []
     inventory = _collect_files(
-        rom_dir, size_set, hash_mode, max_depth=max_depth, skip_zips=skip_zips,
+        rom_dir, size_set, hash_mode, max_depth=max_depth, skip_zips=skip_zips, deep=deep,
     )
 
     # Index hash → TOUS les fichiers (un même contenu peut exister en plusieurs exemplaires)
@@ -2073,7 +2157,7 @@ def scan_roms(
     for it in inventory:
         if it.get("error") or not it.get("hashes"):
             continue
-        if it.get("size_mismatch"):
+        if it.get("size_mismatch") or it.get("corrupt"):
             continue
         h = it["hashes"]
         crc_i = h.get("crc_int", -1)
@@ -2205,6 +2289,15 @@ def scan_roms(
             ))
             continue
         h = it.get("hashes") or {}
+        if it.get("corrupt"):
+            results.append({
+                "status": "bad", "game": "", "expected": "", "found": it["found"],
+                "path": it["path"], "size": h.get("size", 0), "crc": h.get("crc", ""),
+                "md5": "", "sha1": "", "is_zip": it["is_zip"],
+                "zip_member": it.get("zip_member") or "",
+                "message": f"Données corrompues (vérification approfondie) : {it['corrupt']}",
+            })
+            continue
         if it.get("size_mismatch"):
             results.append({
                 "status": "bad", "game": "", "expected": "", "found": it["found"],
@@ -2896,8 +2989,10 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                         continue
                     try:
                         with zipfile.ZipFile(str(c["source_zip"]), "r") as ez:
-                            data = ez.read(c["source_member"])
-                        zout.writestr(expected, data)
+                            _copy_zip_member(
+                                ez, ez.getinfo(c["source_member"]), zout,
+                                new_name=expected, compress_type=zipfile.ZIP_DEFLATED,
+                            )
                         used.add(expected)
                         written += 1
                         notes.append(f"← {Path(c['source_zip']).name} → {expected}")
@@ -2928,7 +3023,9 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
         try:
             by_crc: Dict[int, List[Tuple[str, int]]] = {}
             by_base: Dict[str, str] = {}  # basename lower → real name
-            member_bytes: Dict[str, bytes] = {}
+            # sources retenues (nom réel dans le ZIP, ou "ext:<zip>|<membre>") ; copiées
+            # en flux à l'écriture, jamais chargées en mémoire
+            selected: set = set()
             all_reals: List[str] = []
             all_files: List[str] = []  # tous les membres fichiers (vides inclus)
 
@@ -2944,7 +3041,7 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                     by_base[Path(info.filename).name.lower()] = info.filename
                     all_reals.append(info.filename)
 
-                # plan: expected_basename → source key in member_bytes
+                # plan: expected_basename → source (nom réel, ou ext:<zip>|<membre>)
                 plan: Dict[str, str] = {}
 
                 # 1) Match DAT CRC → fichier local
@@ -2980,8 +3077,8 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                     if hit is not None:
                         plan[expected] = hit
                         used_sources.add(hit)
-                        if hit not in member_bytes:
-                            member_bytes[hit] = zin.read(hit)
+                        if hit not in selected:
+                            selected.add(hit)
 
                 # Passe B : CRC sur un membre dont le nom n'est PAS un autre nom DAT
                 for r in roms_req:
@@ -3012,9 +3109,9 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                     if hit is not None:
                         plan[expected] = hit
                         used_sources.add(hit)
-                        if hit not in member_bytes:
+                        if hit not in selected:
                             try:
-                                member_bytes[hit] = zin.read(hit)
+                                selected.add(hit)
                             except Exception as e:
                                 notes.append(f"Lecture {hit}: {e}")
                                 plan.pop(expected, None)
@@ -3030,15 +3127,15 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                         continue
                     hit = None
                     for real, sz in cands:
-                        if real in member_bytes:
+                        if real in selected:
                             hit = real
                             break
                     if hit is None:
                         hit = cands[0][0]
                     plan[expected] = hit
-                    if hit not in member_bytes:
+                    if hit not in selected:
                         try:
-                            member_bytes[hit] = zin.read(hit)
+                            selected.add(hit)
                         except Exception as e:
                             notes.append(f"Lecture dup {hit}: {e}")
                             plan.pop(expected, None)
@@ -3058,15 +3155,15 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                     # préférer un candidat déjà chargé
                     hit = None
                     for real, sz in cands:
-                        if real in member_bytes:
+                        if real in selected:
                             hit = real
                             break
                     if hit is None:
                         hit = cands[0][0]
                     plan[expected] = hit
-                    if hit not in member_bytes:
+                    if hit not in selected:
                         try:
-                            member_bytes[hit] = zin.read(hit)
+                            selected.add(hit)
                         except Exception as e:
                             notes.append(f"Lecture dup {hit}: {e}")
                             plan.pop(expected, None)
@@ -3087,7 +3184,8 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                             key = f"ext:{c['source_zip']}|{c['source_member']}"
                             try:
                                 with zipfile.ZipFile(str(c["source_zip"]), "r") as ez:
-                                    member_bytes[key] = ez.read(c["source_member"])
+                                    ez.getinfo(c["source_member"])  # existe toujours ?
+                                selected.add(key)
                                 plan[expected] = key
                                 notes.append(f"← {Path(c['source_zip']).name} → {expected}")
                             except Exception as e:
@@ -3116,9 +3214,9 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                     if real is None:
                         continue
                     plan[expected] = real
-                    if real not in member_bytes:
+                    if real not in selected:
                         try:
-                            member_bytes[real] = zin.read(real)
+                            selected.add(real)
                         except Exception as e:
                             notes.append(f"Lecture {real}: {e}")
                             plan.pop(expected, None)
@@ -3145,9 +3243,9 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                         continue
                     # Autoriser copie d'un membre déjà utilisé (même CRC, 2 noms DAT)
                     plan[expected] = real
-                    if real not in member_bytes:
+                    if real not in selected:
                         try:
-                            member_bytes[real] = zin.read(real)
+                            selected.add(real)
                         except Exception as e:
                             notes.append(f"Lecture {real}: {e}")
                             plan.pop(expected, None)
@@ -3196,22 +3294,33 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                 renamed = 0
                 try:
                     with zipfile.ZipFile(str(tmp), "w", compression=zipfile.ZIP_DEFLATED) as zout:
-                        for expected in sorted(plan.keys()):
-                            key = plan[expected]
-                            data = member_bytes.get(key)
-                            if data is None:
-                                continue
-                            if not key.startswith("ext:") and Path(key).name != expected:
-                                renamed += 1
-                                notes.append(f"{Path(key).name} → {expected}")
-                            info = zipfile.ZipInfo(filename=expected)
-                            info.compress_type = zipfile.ZIP_DEFLATED
-                            zout.writestr(info, data)
-                            written += 1
-                        if extras:
+                        ext_zips: Dict[str, zipfile.ZipFile] = {}
+                        try:
                             with zipfile.ZipFile(str(src), "r") as zin2:
+                                for expected in sorted(plan.keys()):
+                                    key = plan[expected]
+                                    if key not in selected:
+                                        continue
+                                    if key.startswith("ext:"):
+                                        ext_path, ext_member = key[4:].split("|", 1)
+                                        if ext_path not in ext_zips:
+                                            ext_zips[ext_path] = zipfile.ZipFile(ext_path, "r")
+                                        zsrc, sname = ext_zips[ext_path], ext_member
+                                    else:
+                                        zsrc, sname = zin2, key
+                                        if Path(key).name != expected:
+                                            renamed += 1
+                                            notes.append(f"{Path(key).name} → {expected}")
+                                    _copy_zip_member(
+                                        zsrc, zsrc.getinfo(sname), zout,
+                                        new_name=expected, compress_type=zipfile.ZIP_DEFLATED,
+                                    )
+                                    written += 1
                                 for name in extras:
                                     _copy_zip_member(zin2, zin2.getinfo(name), zout)
+                        finally:
+                            for ez in ext_zips.values():
+                                ez.close()
                     if written == 0:
                         if tmp.exists():
                             tmp.unlink()
@@ -4128,6 +4237,7 @@ def _api_scan_body(path: Path, body: dict):
             hash_mode,
             dat_mode,
             max_depth=max_depth,
+            deep=bool(body.get("deep")),
         )
         # Profondeur effective (peut avoir été relevée pour CHD)
         has_disks = any(g.get("is_disk") for g in (STATE.get("games_list") or []))
@@ -7107,6 +7217,7 @@ def api_profiles_scan_system(profile_id: str):
             rpath, rom_map, games_list, size_set or set(),
             hash_mode or "crc", header.get("dat_mode", "standard"),
             max_depth=max_depth,
+            deep=bool(body.get("deep")),
         )
         STATE["results"] = results
         STATE["roms_path"] = str(rpath)
