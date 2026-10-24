@@ -258,6 +258,21 @@ button.lang-active { border-color: var(--accent); color: var(--accent-h); backgr
 }
 body.loading-active { cursor: wait; }
 body.loading-active * { cursor: wait !important; }
+/* Avancement du scan */
+.scan-prog { display: none; width: min(520px, calc(100vw - 32px)); flex-direction: column; gap: 8px; }
+.scan-prog.on { display: flex; }
+.scan-prog-bar { height: 10px; border-radius: 5px; background: var(--border); overflow: hidden; position: relative; }
+.scan-prog-fill { height: 100%; width: 0; background: var(--accent); transition: width .4s ease; }
+.scan-prog-bar.indet .scan-prog-fill { width: 30%; position: absolute; animation: scanIndet 1.2s ease-in-out infinite; }
+@keyframes scanIndet { from { left: -30%; } to { left: 100%; } }
+.scan-prog-line { font-size: 12px; color: var(--text2); display: flex; justify-content: space-between; gap: 12px; }
+.scan-prog-files { font-size: 12px; color: var(--text); display: flex; flex-direction: column; gap: 4px; }
+.scan-prog-file { display: flex; gap: 8px; align-items: center; }
+.scan-prog-file .n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scan-prog-file .mini { width: 80px; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; flex: none; }
+.scan-prog-file .mini > div { height: 100%; background: var(--accent); }
+.scan-prog-file .p { width: 38px; text-align: right; color: var(--text2); flex: none; }
+.scan-prog button { align-self: center; cursor: pointer !important; }
 
 .comp-ok { color: #3fb950; }
 .comp-rename { color: #d29922; }
@@ -1279,6 +1294,14 @@ body.arcade-mode th.arcade-only, body.arcade-mode td.arcade-only { display: tabl
   <div class="loading-spinner"></div>
   <div class="loading-text" id="loadingText">Traitement en cours…</div>
   <div class="loading-sub" id="loadingSub"></div>
+  <div class="scan-prog" id="scanProg">
+    <div class="scan-prog-line"><span id="scanProgPhase"></span><span id="scanProgPct"></span></div>
+    <div class="scan-prog-bar" id="scanProgBar"><div class="scan-prog-fill" id="scanProgFill"></div></div>
+    <div class="scan-prog-line"><span id="scanProgDetail"></span><span id="scanProgEta"></span></div>
+    <div class="scan-prog-files" id="scanProgFiles"></div>
+    <div class="scan-prog-line"><span id="scanProgCounts"></span></div>
+    <button type="button" id="scanProgCancel" onclick="cancelScan()" data-i18n="prog.cancel">Annuler le scan</button>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -1630,6 +1653,105 @@ function showLoading(msg, sub) {
 function hideLoading() {
   document.getElementById('loadingOverlay').classList.remove('open');
   document.body.classList.remove('loading-active');
+}
+
+/* ===== Avancement du scan (GET /api/scan/progress pendant POST /api/scan) ===== */
+let SCAN_PROG_TIMER = null;
+function fmtBytes(n) {
+  n = Number(n) || 0;
+  let u = t('prog.units').split(',');
+  if (u.length !== 5) u = ['o', 'Ko', 'Mo', 'Go', 'To'];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return (i ? n.toFixed(n < 10 ? 1 : 0) : String(Math.round(n))) + ' ' + u[i];
+}
+function fmtDuration(s) {
+  s = Math.max(0, Math.round(Number(s) || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  if (h) return h + ' h ' + String(m).padStart(2, '0');
+  if (m) return m + ' min ' + String(sec).padStart(2, '0');
+  return sec + ' s';
+}
+function renderScanProgress(p) {
+  const box = document.getElementById('scanProg');
+  if (!box || !p || !p.phase) return;
+  box.classList.add('on');
+  const bar = document.getElementById('scanProgBar');
+  const fill = document.getElementById('scanProgFill');
+  let frac = null;
+  if (p.phase === 'hash' && p.bytes_total > 0) frac = p.bytes_done / p.bytes_total;
+  else if (p.total > 0) frac = p.done / p.total;
+  bar.classList.toggle('indet', frac === null);
+  fill.style.width = frac === null ? '' : (Math.min(1, frac) * 100).toFixed(1) + '%';
+  const PHASES = { list: 'prog.list', quick: 'prog.quick', hash: 'prog.hash', archives: 'prog.archives', match: 'prog.match' };
+  document.getElementById('scanProgPhase').textContent = p.cancelling ? t('prog.cancelling') : t(PHASES[p.phase] || 'prog.match');
+  document.getElementById('scanProgPct').textContent = frac === null ? '' : Math.floor(frac * 100) + ' %';
+  let detail = '';
+  if (p.phase === 'list') detail = t('prog.found', { n: p.done });
+  else if (p.total) detail = p.done + ' / ' + p.total;
+  if (p.phase === 'hash' && p.bytes_total) {
+    detail += ' · ' + fmtBytes(p.bytes_done) + ' / ' + fmtBytes(p.bytes_total);
+    if (p.rate) detail += ' · ' + fmtBytes(p.rate) + '/s';
+  }
+  document.getElementById('scanProgDetail').textContent = detail;
+  document.getElementById('scanProgEta').textContent =
+    (p.eta !== null && p.eta !== undefined) ? t('prog.eta', { t: fmtDuration(p.eta) }) : t('prog.elapsed', { t: fmtDuration(p.elapsed) });
+  const files = document.getElementById('scanProgFiles');
+  files.innerHTML = '';
+  (p.active || []).forEach(function (f) {
+    const row = document.createElement('div');
+    row.className = 'scan-prog-file';
+    const pct = f.size ? Math.floor(f.done / f.size * 100) : 0;
+    const n = document.createElement('span');
+    n.className = 'n'; n.textContent = f.name; n.title = f.name;
+    row.appendChild(n);
+    if (p.phase === 'hash' && f.size) {
+      const mini = document.createElement('span');
+      mini.className = 'mini';
+      const inner = document.createElement('div');
+      inner.style.width = pct + '%';
+      mini.appendChild(inner);
+      row.appendChild(mini);
+      const pp = document.createElement('span');
+      pp.className = 'p'; pp.textContent = pct + ' %';
+      row.appendChild(pp);
+    }
+    files.appendChild(row);
+  });
+  const c = p.counts || {};
+  document.getElementById('scanProgCounts').textContent =
+    (c.quick || c.cached || c.hashed) ? t('prog.counts', { quick: c.quick || 0, cached: c.cached || 0, hashed: c.hashed || 0 }) : '';
+  const btn = document.getElementById('scanProgCancel');
+  if (btn) btn.disabled = !!p.cancelling;
+}
+function startScanProgress() {
+  stopScanProgress();
+  const box = document.getElementById('scanProg');
+  if (box) box.classList.remove('on');
+  const btn = document.getElementById('scanProgCancel');
+  if (btn) btn.disabled = false;
+  let busy = false;
+  SCAN_PROG_TIMER = setInterval(async function () {
+    if (busy) return;
+    busy = true;
+    try {
+      const r = await fetch('/api/scan/progress', { cache: 'no-store' });
+      const p = await r.json();
+      if (p && p.running) renderScanProgress(p);
+    } catch (e) { /* serveur occupé : prochain tour */ }
+    busy = false;
+  }, 700);
+}
+function stopScanProgress() {
+  if (SCAN_PROG_TIMER) clearInterval(SCAN_PROG_TIMER);
+  SCAN_PROG_TIMER = null;
+  const box = document.getElementById('scanProg');
+  if (box) box.classList.remove('on');
+}
+async function cancelScan() {
+  const btn = document.getElementById('scanProgCancel');
+  if (btn) btn.disabled = true;
+  try { await fetch('/api/scan/cancel', { method: 'POST' }); } catch (e) {}
 }
 
 // Identifiant des résultats affichés : renvoyé par chaque scan / chargement de DAT,
@@ -2433,6 +2555,7 @@ async function doScan() {
   // Nettoyage immédiat : ne pas laisser l'ancien set visible pendant/après le scan
   clearScanResults();
   showLoading(t('loading.scan'), sub);
+  startScanProgress();
   try {
     const data = await api('/api/scan', {
       method: 'POST',
@@ -2440,8 +2563,9 @@ async function doScan() {
       body: JSON.stringify({ path: path, max_depth: max_depth, deep: isDeepScan() })
     });
     if (data.error) {
-      if (st) st.textContent = data.error;
-      toast(data.error, false);
+      const msg = data.cancelled ? t('toast.scan_cancelled') : data.error;
+      if (st) st.textContent = msg;
+      toast(msg, !!data.cancelled);
       clearScanResults();
       return;
     }
@@ -2465,6 +2589,7 @@ async function doScan() {
     clearScanResults();
     toast(t('toast.scan_error', { e: e }), false);
   } finally {
+    stopScanProgress();
     hideLoading();
   }
 }
@@ -4167,7 +4292,11 @@ async function openProfile(id) {
   showLoading(t('loading.default') || '…', id);
   try {
     const data = await api('/api/profiles/' + encodeURIComponent(id));
-    if (data.error) { toast(data.error, false); return; }
+    if (data.error) {
+      if (data.cancelled) { clearScanResults(); toast(t('toast.scan_cancelled')); return 'cancelled'; }
+      toast(data.error, false);
+      return;
+    }
     CURRENT_PROFILE = data.profile;
     PROF_SELECTED = new Set();
     document.getElementById('profListPanel').style.display = 'none';
@@ -4274,6 +4403,7 @@ function toggleProfCheckAll(on) {
 async function scanOneSystem(systemId) {
   if (!CURRENT_PROFILE) return;
   showLoading((t('loading.scan') || 'Scan…') + ' ' + systemId, CURRENT_PROFILE.name || '');
+  startScanProgress();
   try {
     const max_depth = typeof getScanMaxDepth === 'function' ? getScanMaxDepth() : 0;
     const data = await api('/api/profiles/' + encodeURIComponent(CURRENT_PROFILE.id) + '/scan_system', {
@@ -4307,6 +4437,7 @@ async function scanOneSystem(systemId) {
   } catch (e) {
     toast(String(e), false);
   } finally {
+    stopScanProgress();
     hideLoading();
   }
 }
@@ -4316,7 +4447,7 @@ async function scanSelectedSystems() {
   if (!ids.length) return toast(t('prof.need_sel') || 'Sélectionnez au moins un système', false);
   for (let i = 0; i < ids.length; i++) {
     showLoading('Scan ' + (i + 1) + '/' + ids.length, ids[i]);
-    await scanOneSystem(ids[i]);
+    if (await scanOneSystem(ids[i]) === 'cancelled') break;  // Annuler arrête toute la série
   }
 }
 

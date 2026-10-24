@@ -375,5 +375,18 @@
   "tools.hash_cache_desc": "CRC-er for store filer som allerede er lest, lagres og gjenbrukes så lenge filen ikke endres (samme størrelse, samme dato). Tømming av hurtigbufferen tvinger ny beregning ved neste skanning.",
   "tools.hash_cache_clear": "🗑 Tøm hurtigbuffer",
   "ui.hash_cache_hits": "{n} CRC-er fra hurtigbufferen",
-  "ui.hash_cache_cleared": "Hurtigbuffer tømt ({n} oppføringer)"
+  "ui.hash_cache_cleared": "Hurtigbuffer tømt ({n} oppføringer)",
+  "prog.list": "Kartlegger filer…",
+  "prog.quick": "Rask gjenkjenning (hurtigbuffer, navn + størrelse)…",
+  "prog.hash": "Beregner CRC (leser filer)…",
+  "prog.archives": "Leser arkiver…",
+  "prog.match": "Sammenligner med DAT…",
+  "prog.cancel": "Avbryt skanning",
+  "prog.cancelling": "Avbryter…",
+  "prog.found": "{n} filer funnet",
+  "prog.eta": "≈ {t} igjen",
+  "prog.elapsed": "{t} gått",
+  "prog.counts": "{quick} via navn + størrelse · {cached} fra hurtigbuffer · {hashed} lest",
+  "prog.units": "B,KB,MB,GB,TB",
+  "toast.scan_cancelled": "Skanning avbrutt"
 }

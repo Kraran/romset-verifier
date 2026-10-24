@@ -375,5 +375,18 @@
   "tools.hash_cache_desc": "Os CRC dos ficheiros grandes já lidos são guardados e reutilizados enquanto o ficheiro não mudar (mesmo tamanho, mesma data). Esvaziar a cache obriga a recalculá-los na próxima análise.",
   "tools.hash_cache_clear": "🗑 Esvaziar a cache",
   "ui.hash_cache_hits": "{n} CRC obtidos da cache",
-  "ui.hash_cache_cleared": "Cache esvaziada ({n} entradas)"
+  "ui.hash_cache_cleared": "Cache esvaziada ({n} entradas)",
+  "prog.list": "Inventário dos ficheiros…",
+  "prog.quick": "Identificação rápida (cache, nome + tamanho)…",
+  "prog.hash": "A calcular CRC (leitura dos ficheiros)…",
+  "prog.archives": "A ler arquivos…",
+  "prog.match": "A comparar com o DAT…",
+  "prog.cancel": "Cancelar análise",
+  "prog.cancelling": "A cancelar…",
+  "prog.found": "{n} ficheiros encontrados",
+  "prog.eta": "≈ {t} restante",
+  "prog.elapsed": "{t} decorrido",
+  "prog.counts": "{quick} por nome + tamanho · {cached} da cache · {hashed} lidos",
+  "prog.units": "B,KB,MB,GB,TB",
+  "toast.scan_cancelled": "Análise cancelada"
 }

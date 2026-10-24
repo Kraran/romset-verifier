@@ -375,5 +375,18 @@
   "tools.hash_cache_desc": "CRCs of large files already read are remembered and reused as long as the file has not changed (same size, same date). Clearing the cache forces them to be recomputed on the next scan.",
   "tools.hash_cache_clear": "🗑 Clear cache",
   "ui.hash_cache_hits": "{n} CRCs from cache",
-  "ui.hash_cache_cleared": "Cache cleared ({n} entries)"
+  "ui.hash_cache_cleared": "Cache cleared ({n} entries)",
+  "prog.list": "Listing files…",
+  "prog.quick": "Quick identification (cache, name + size)…",
+  "prog.hash": "Computing CRCs (reading files)…",
+  "prog.archives": "Reading archives…",
+  "prog.match": "Comparing with the DAT…",
+  "prog.cancel": "Cancel scan",
+  "prog.cancelling": "Cancelling…",
+  "prog.found": "{n} files found",
+  "prog.eta": "≈ {t} left",
+  "prog.elapsed": "{t} elapsed",
+  "prog.counts": "{quick} by name + size · {cached} from cache · {hashed} read",
+  "prog.units": "B,KB,MB,GB,TB",
+  "toast.scan_cancelled": "Scan cancelled"
 }
