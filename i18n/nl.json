@@ -203,7 +203,7 @@
   "scan.subdirs_title": "Bestanden in submappen meenemen (multi-disc, CHD…). Diepte 1 of 2. Standaard uit.",
   "scan.depth_title": "Scandiepte",
   "scan.deep": "Grondige controle",
-  "scan.deep_title": "Pakt elk bestand in archieven uit om beschadigde gegevens te vinden (veel trager)",
+  "scan.deep_title": "Berekent de volledige CRC van grote bestanden (anders herkend op naam + grootte) en pakt archieven uit om beschadigde gegevens te vinden (veel trager)",
   "detail.rename": "Hernoemen",
   "detail.repair": "Repareren",
   "action.repair": "🔧 Selectie repareren",

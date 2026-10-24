@@ -203,7 +203,7 @@
   "scan.subdirs_title": "Includi i file nelle sottocartelle (multi-disco, CHD…). Profondità 1 o 2. Disattivato per impostazione predefinita.",
   "scan.depth_title": "Profondità di scansione",
   "scan.deep": "Verifica approfondita",
-  "scan.deep_title": "Decomprime ogni file degli archivi per rilevare dati danneggiati (molto più lento)",
+  "scan.deep_title": "Calcola il CRC completo dei file grandi (altrimenti riconosciuti per nome + dimensione) e decomprime gli archivi per rilevare dati danneggiati (molto più lento)",
   "detail.rename": "Rinomina",
   "detail.repair": "Ripara",
   "action.repair": "🔧 Ripara selezione",

@@ -203,7 +203,7 @@
   "scan.subdirs_title": "Uwzględnij pliki w podfolderach (wiele dysków, CHD…). Głębokość 1 lub 2. Domyślnie wyłączone.",
   "scan.depth_title": "Głębokość skanowania",
   "scan.deep": "Dokładna weryfikacja",
-  "scan.deep_title": "Rozpakowuje każdy plik w archiwach, aby wykryć uszkodzone dane (znacznie wolniej)",
+  "scan.deep_title": "Oblicza pełne CRC dużych plików (w przeciwnym razie rozpoznawanych po nazwie i rozmiarze) i rozpakowuje archiwa, aby wykryć uszkodzone dane (znacznie wolniej)",
   "detail.rename": "Zmień nazwę",
   "detail.repair": "Napraw",
   "action.repair": "🔧 Napraw zaznaczone",
