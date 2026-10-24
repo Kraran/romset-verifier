@@ -2920,7 +2920,9 @@ async function actFixAll() {
 async function actDeleteBads() {
   const pending = RESULTS
     .map((r, i) => ({ r, i }))
-    .filter(x => x.r.status === 'bad' || x.r.status === 'error')
+    // Même règle que le serveur (_bulk_deletable) : pas les erreurs de lecture,
+    // pas les ZIP « hors DAT » en arcade (BIOS absent d'un DAT filtré, autre version…)
+    .filter(x => x.r.status === 'bad' && x.r.mtype !== 'extra')
     .filter(x => x.r.path);
   if (!pending.length) return toast('Aucun Bad/Error a supprimer', false);
   {

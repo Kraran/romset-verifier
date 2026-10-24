@@ -11,6 +11,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -2059,6 +2060,153 @@ def scan_roms(
     return results
 
 
+# ---------------------------------------------------------------------------
+#  Écritures sûres : remplacement atomique, corbeille, copie de membres ZIP
+# ---------------------------------------------------------------------------
+
+_REPLACE_RETRIES = 6
+_REPLACE_DELAY = 0.2  # secondes, croissant à chaque essai
+TRASH_DIR_NAME = ".rsv_trash"  # ignoré par le scan (dossier commençant par ".")
+_TRASH_SESSION = time.strftime("%Y%m%d-%H%M%S")
+
+
+def _safe_replace(tmp: Path, dst: Path) -> None:
+    """
+    Remplace dst par tmp sans JAMAIS supprimer dst au préalable.
+    Retente quelques fois (antivirus, Explorateur, NAS qui verrouillent un instant).
+    Échec définitif : dst reste intact, tmp est supprimé, RuntimeError.
+    Si dst n'existe pas (création), tmp est conservé pour ne rien perdre.
+    """
+    tmp, dst = Path(tmp), Path(dst)
+    last: Optional[OSError] = None
+    for attempt in range(_REPLACE_RETRIES):
+        try:
+            os.replace(str(tmp), str(dst))
+            return
+        except OSError as e:
+            last = e
+            if attempt < _REPLACE_RETRIES - 1:
+                time.sleep(_REPLACE_DELAY * (attempt + 1))
+    if dst.exists():
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise RuntimeError(f"Fichier verrouillé, original conservé ({dst.name}) : {last}")
+    raise RuntimeError(f"Écriture impossible de {dst.name} (copie laissée dans {tmp.name}) : {last}")
+
+
+def _trash_root_for(path: Path) -> Path:
+    """Dossier sous lequel créer la corbeille : racine ROMs du scan si path y est, sinon son dossier."""
+    roms = (STATE.get("roms_path") or "").strip()
+    if roms:
+        try:
+            Path(path).resolve().relative_to(Path(roms).resolve())
+            return Path(roms)
+        except (ValueError, OSError):
+            pass
+    return Path(path).parent
+
+
+def _trash_dest(path: Path, sub: str = "") -> Path:
+    """Chemin libre dans <racine>/.rsv_trash/<session>/<chemin relatif>."""
+    path = Path(path)
+    root = _trash_root_for(path)
+    try:
+        rel = path.resolve().relative_to(root.resolve())
+    except (ValueError, OSError):
+        rel = Path(path.name)
+    dest = root / TRASH_DIR_NAME / _TRASH_SESSION / rel
+    if sub:
+        dest = dest / sub
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists():
+        n = 2
+        while True:
+            cand = dest.with_name(f"{dest.stem} ({n}){dest.suffix}")
+            if not cand.exists():
+                dest = cand
+                break
+            n += 1
+    return dest
+
+
+def move_to_trash(path: Path, copy: bool = False) -> Path:
+    """Déplace (ou copie) un fichier dans la corbeille de l'application. Retourne sa destination."""
+    path = Path(path)
+    dest = _trash_dest(path)
+    if copy:
+        shutil.copy2(str(path), str(dest))
+    else:
+        try:
+            os.replace(str(path), str(dest))
+        except OSError:
+            shutil.move(str(path), str(dest))  # autre volume
+    return dest
+
+
+def _copy_zip_member(
+    zin: zipfile.ZipFile,
+    info: zipfile.ZipInfo,
+    zout: zipfile.ZipFile,
+    new_name: Optional[str] = None,
+    compress_type: Optional[int] = None,
+    compresslevel: Optional[int] = None,
+) -> None:
+    """Copie un membre ZIP en flux (pas de chargement complet en mémoire)."""
+    zi = zipfile.ZipInfo(filename=new_name or info.filename, date_time=info.date_time)
+    zi.compress_type = info.compress_type if compress_type is None else compress_type
+    zi.external_attr = info.external_attr
+    zi.create_system = info.create_system
+    zi.comment = info.comment
+    zi.file_size = info.file_size  # décide du ZIP64 avant écriture
+    if compresslevel is not None:
+        # écrire avec une ZipInfo ignore le compresslevel du ZipFile : le fixer ici
+        if hasattr(zi, "compress_level"):
+            zi.compress_level = compresslevel  # Python 3.13+
+        else:
+            zi._compresslevel = compresslevel  # type: ignore[attr-defined]
+    with zin.open(info, "r") as src, zout.open(zi, "w", force_zip64=info.file_size > 0xFFFF0000) as dst:
+        shutil.copyfileobj(src, dst, _READ_BUF)
+
+
+def _remove_zip_members(zip_path: Path, members: List[str]) -> Tuple[int, int]:
+    """
+    Retire des membres d'un ZIP (réécriture en flux + remplacement sûr).
+    Chaque membre retiré est d'abord extrait dans la corbeille.
+    Retourne (nb retirés, nb restants).
+    """
+    zip_path = Path(zip_path)
+    wanted = {_norm_zip_name(m) for m in members if m}
+    tmp = zip_path.with_name(zip_path.name + ".rsv_tmp")
+    if tmp.exists():
+        tmp.unlink()
+    removed = kept = 0
+    try:
+        with zipfile.ZipFile(str(zip_path), "r") as zin, zipfile.ZipFile(str(tmp), "w") as zout:
+            for info in zin.infolist():
+                if _norm_zip_name(info.filename) in wanted:
+                    dest = _trash_dest(zip_path, sub=Path(info.filename).name)
+                    with zin.open(info, "r") as src, open(dest, "wb") as out:
+                        shutil.copyfileobj(src, out, _READ_BUF)
+                    removed += 1
+                    continue
+                if info.is_dir():
+                    zout.writestr(info, b"")
+                    continue
+                _copy_zip_member(zin, info, zout)
+                kept += 1
+    except Exception:
+        if tmp.exists():
+            tmp.unlink()
+        raise
+    if not removed:
+        tmp.unlink()
+        return 0, kept
+    _safe_replace(tmp, zip_path)
+    return removed, kept
+
+
 def _rename_zip_member(zip_path: Path, old_member: str, new_member: str) -> None:
     """Renomme un membre dans un ZIP (réécriture atomique via fichier temporaire)."""
     _batch_rename_zip_members(zip_path, {old_member: new_member})
@@ -2089,7 +2237,6 @@ def _batch_rename_zip_members(zip_path: Path, mapping: Dict[str, str]) -> List[s
         raise RuntimeError("Collision : deux ROMs renommées vers le même nom")
 
     applied: List[str] = []
-    entries: List[Tuple[str, bytes, Any]] = []  # new_name, data, src_info
 
     with zipfile.ZipFile(str(zip_path), "r") as zin:
         real_names: Dict[str, str] = {}
@@ -2129,50 +2276,29 @@ def _batch_rename_zip_members(zip_path: Path, mapping: Dict[str, str]) -> List[s
                     raise RuntimeError(f"Cible déjà présente dans le ZIP : {new}")
             resolved[real_old] = Path(new).name
 
-        for item in zin.infolist():
-            if item.is_dir() or item.file_size <= 0:
-                continue
-            data = zin.read(item.filename)
-            filename = resolved.get(item.filename, item.filename)
-            if filename != item.filename:
-                applied.append(f"{item.filename} → {filename}")
-            entries.append((filename, data, item))
-
-    # Source fermée — écriture + remplacement
-    tmp = zip_path.with_name(zip_path.name + ".rsv_tmp")
-    if tmp.exists():
-        try:
-            tmp.unlink()
-        except OSError:
-            pass
-    try:
-        with zipfile.ZipFile(str(tmp), "w") as zout:
-            for filename, data, item in entries:
-                info = zipfile.ZipInfo(filename=filename)
-                info.compress_type = item.compress_type
-                info.external_attr = item.external_attr
-                info.date_time = item.date_time
-                try:
-                    info.create_system = item.create_system
-                except Exception:
-                    pass
-                zout.writestr(info, data)
-        try:
-            os.replace(str(tmp), str(zip_path))
-        except OSError:
-            try:
-                if zip_path.exists():
-                    zip_path.unlink()
-            except OSError as e:
-                raise RuntimeError(f"Impossible de remplacer le ZIP (verrouillé ?) : {e}")
-            os.replace(str(tmp), str(zip_path))
-    except Exception:
+        # Écriture en flux (source ouverte en lecture seule), remplacement après fermeture
+        tmp = zip_path.with_name(zip_path.name + ".rsv_tmp")
         if tmp.exists():
-            try:
-                tmp.unlink()
-            except OSError:
-                pass
-        raise
+            tmp.unlink()
+        try:
+            with zipfile.ZipFile(str(tmp), "w") as zout:
+                for item in zin.infolist():
+                    if item.is_dir():
+                        zout.writestr(item, b"")
+                        continue
+                    filename = resolved.get(item.filename, item.filename)
+                    if filename != item.filename:
+                        applied.append(f"{item.filename} → {filename}")
+                    _copy_zip_member(zin, item, zout, new_name=filename)
+        except Exception:
+            if tmp.exists():
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
+            raise
+
+    _safe_replace(tmp, zip_path)
     return applied
 
 
@@ -2547,11 +2673,10 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                     tmp.unlink()
                 return False, "Impossible de reconstruire"
             if src.exists():
-                try:
-                    src.unlink()
-                except OSError as e:
-                    return False, f"Impossible d'écraser {src.name}: {e}"
-            os.replace(str(tmp), str(src))
+                # un fichier homonyme existe : le sauvegarder, jamais l'effacer
+                saved = move_to_trash(src, copy=True)
+                notes.append(f"ancien {src.name} sauvegardé → {saved}")
+            _safe_replace(tmp, src)
             notes.insert(0, f"ZIP créé ({written} ROM)")
         except Exception as e:
             try:
@@ -2570,10 +2695,14 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
             by_base: Dict[str, str] = {}  # basename lower → real name
             member_bytes: Dict[str, bytes] = {}
             all_reals: List[str] = []
+            all_files: List[str] = []  # tous les membres fichiers (vides inclus)
 
             with zipfile.ZipFile(str(src), "r") as zin:
                 for info in zin.infolist():
-                    if info.is_dir() or info.file_size <= 0:
+                    if info.is_dir():
+                        continue
+                    all_files.append(info.filename)
+                    if info.file_size <= 0:
                         continue
                     crc = info.CRC & 0xFFFFFFFF
                     by_crc.setdefault(crc, []).append((info.filename, info.file_size))
@@ -2800,8 +2929,15 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                     needs_rewrite = True
                     break
             used_reals = {v for v in plan.values() if not str(v).startswith("ext:")}
-            if len(all_reals) != len(used_reals):
-                needs_rewrite = True
+            # Membres non utilisés par le plan : conservés tels quels (hors DAT, devices,
+            # autre révision…), sauf s'ils portent le nom d'une ROM du plan (ex. mauvais CRC)
+            # → retirés du ZIP mais sauvegardés (copie du ZIP original dans la corbeille).
+            plan_names_l = {k.lower() for k in plan}
+            extras = [
+                f for f in all_files
+                if f not in used_reals and Path(f).name.lower() not in plan_names_l
+            ]
+            dropped = [f for f in all_files if f not in used_reals and f not in extras]
             # Toujours réécrire s'il reste des rename dans les components
             if any((c.get("status") or "") == "rename" for c in (row.get("components") or [])):
                 needs_rewrite = True
@@ -2809,7 +2945,10 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
             if len(plan) > len(used_reals):
                 needs_rewrite = True
 
-            _repair_log(f"  needs_rewrite={needs_rewrite} plan={len(plan)}")
+            _repair_log(
+                f"  needs_rewrite={needs_rewrite} plan={len(plan)} "
+                f"extras_kept={len(extras)} dropped={len(dropped)}"
+            )
 
             if needs_rewrite and plan:
                 tmp = src.with_name(src.name + ".rsv_repair")
@@ -2834,32 +2973,31 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                             info.compress_type = zipfile.ZIP_DEFLATED
                             zout.writestr(info, data)
                             written += 1
+                        if extras:
+                            with zipfile.ZipFile(str(src), "r") as zin2:
+                                for name in extras:
+                                    _copy_zip_member(zin2, zin2.getinfo(name), zout)
                     if written == 0:
                         if tmp.exists():
                             tmp.unlink()
                         return False, "Aucune ROM écrite"
+                    if dropped:
+                        backup = move_to_trash(src, copy=True)
+                        notes.append(
+                            f"{len(dropped)} fichier(s) retiré(s) du ZIP, original sauvegardé → {backup}"
+                        )
+                        _repair_log(f"  backup {backup} dropped={dropped}")
                     try:
-                        os.replace(str(tmp), str(src))
-                    except OSError:
-                        try:
-                            if src.exists():
-                                src.unlink()
-                        except OSError as e:
-                            try:
-                                if tmp.exists():
-                                    tmp.unlink()
-                            except OSError:
-                                pass
-                            msg = f"ZIP verrouillé (fermez MAME / l'explorateur) : {e}"
-                            _repair_log(msg)
-                            return False, msg
-                        try:
-                            os.replace(str(tmp), str(src))
-                        except OSError as e:
-                            return False, f"Remplacement ZIP échoué : {e}"
+                        _safe_replace(tmp, src)
+                    except RuntimeError as e:
+                        msg = f"{e} — fermez MAME / l'explorateur puis réessayez"
+                        _repair_log(f"  {msg}")
+                        return False, msg
                     if renamed:
                         notes.insert(0, f"{renamed} ROM renommée(s)")
-                    _repair_log(f"  wrote {written} roms renamed={renamed}")
+                    if extras:
+                        notes.append(f"{len(extras)} fichier(s) hors DAT conservé(s)")
+                    _repair_log(f"  wrote {written} roms renamed={renamed} extras={len(extras)}")
                 except Exception as e:
                     try:
                         if tmp.exists():
@@ -2948,19 +3086,53 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
 
 
 
+def _row_is_zip_member(row: Dict) -> bool:
+    """Ligne « membre d'un ZIP » (mode standard) : le fichier sur disque est partagé avec d'autres lignes."""
+    return bool(row.get("is_zip") and (row.get("zip_member") or "").strip() and row.get("components") is None)
+
+
+def _bulk_deletable(row: Dict) -> bool:
+    """
+    Lignes que « Supprimer les Bad » peut traiter.
+    Exclus : erreurs de lecture (souvent passagères), ZIP hors DAT en arcade
+    (BIOS absent d'un DAT filtré, set d'une autre version MAME…).
+    """
+    if (row.get("status") or "") != "bad" or not row.get("path"):
+        return False
+    if (row.get("mtype") or "") == "extra":
+        return False
+    return True
+
+
 def do_delete(row: Dict) -> Tuple[bool, str]:
-    # Autorise la suppression de tout fichier présent (good, rename, bad, error…)
+    """
+    Supprime le fichier d'une ligne en le DÉPLAÇANT dans <racine ROMs>/.rsv_trash/<session>/.
+    Ligne membre d'un ZIP (mode standard) : seul ce membre est retiré du ZIP
+    (et extrait dans la corbeille) ; les autres ROM du ZIP sont conservées.
+    """
     if not row.get("path"):
         return False, "Pas de fichier à supprimer"
     src = Path(row["path"])
     if not src.exists():
         return False, "Déjà absent"
     try:
-        src.unlink()
+        if _row_is_zip_member(row):
+            member = row["zip_member"]
+            with zipfile.ZipFile(str(src), "r") as zf:
+                n_files = sum(1 for i in zf.infolist() if not i.is_dir())
+            if n_files > 1:
+                removed, _kept = _remove_zip_members(src, [member])
+                if not removed:
+                    return False, f"Membre introuvable dans {src.name} : {member}"
+                row["status"] = "deleted"
+                row["found"] = ""
+                row["path"] = ""
+                return True, f"{member} retiré de {src.name} (copie dans {TRASH_DIR_NAME})"
+        dest = move_to_trash(src)
         row["status"] = "deleted"
         row["found"] = ""
         row["path"] = ""
-        return True, "Supprimé"
+        return True, f"Déplacé dans {TRASH_DIR_NAME} ({dest.parent.name})"
     except Exception as e:
         return False, str(e)
 
@@ -3765,48 +3937,30 @@ def recompress_zip_file(zip_path: Path, compresslevel: int = 9) -> Dict[str, Any
     members = 0
     try:
         level = max(0, min(9, int(compresslevel)))
-        with zipfile.ZipFile(str(zip_path), "r") as zin:
-            # Précharge pour fermer la source avant remplacement (Windows / NAS)
-            entries: List[Tuple[str, bytes, int]] = []
+        # Copie en flux (pas tout le ZIP en RAM) ; la source est fermée avant le remplacement
+        with zipfile.ZipFile(str(zip_path), "r") as zin, zipfile.ZipFile(
+            str(tmp), "w", compression=zipfile.ZIP_DEFLATED, compresslevel=level
+        ) as zout:
             for info in zin.infolist():
-                if info.is_dir():
+                if info.is_dir() or info.filename.endswith("/"):
                     continue
                 # garder le chemin interne (sous-dossiers éventuels)
                 name = info.filename.replace("\\", "/")
-                if name.endswith("/"):
-                    continue
-                data = zin.read(info.filename)
-                entries.append((name, data, info.external_attr))
+                _copy_zip_member(
+                    zin, info, zout, new_name=name,
+                    compress_type=zipfile.ZIP_DEFLATED, compresslevel=level,
+                )
                 members += 1
 
-        with zipfile.ZipFile(
-            str(tmp), "w", compression=zipfile.ZIP_DEFLATED, compresslevel=level
-        ) as zout:
-            for name, data, ext_attr in entries:
-                zi = zipfile.ZipInfo(filename=name)
-                zi.compress_type = zipfile.ZIP_DEFLATED
-                zi.external_attr = ext_attr
-                zout.writestr(zi, data)
-
         try:
-            os.replace(str(tmp), str(zip_path))
-        except OSError:
-            try:
-                if zip_path.exists():
-                    zip_path.unlink()
-            except OSError as e:
-                try:
-                    if tmp.exists():
-                        tmp.unlink()
-                except OSError:
-                    pass
-                return {
-                    "ok": False,
-                    "error": f"Fichier verrouillé : {e}",
-                    "path": str(zip_path),
-                    "name": zip_path.name,
-                }
-            os.replace(str(tmp), str(zip_path))
+            _safe_replace(tmp, zip_path)
+        except RuntimeError as e:
+            return {
+                "ok": False,
+                "error": str(e),
+                "path": str(zip_path),
+                "name": zip_path.name,
+            }
 
         size_after = zip_path.stat().st_size
         saved = size_before - size_after
@@ -3872,6 +4026,8 @@ def list_zip_files(folder: Path, max_depth: int = 0) -> List[Path]:
     if max_depth >= 1:
         try:
             for name in os.listdir(str(folder)):
+                if name.startswith("."):  # .rsv_trash, dossiers cachés
+                    continue
                 sub = folder / name
                 try:
                     if not sub.is_dir():
@@ -3882,6 +4038,8 @@ def list_zip_files(folder: Path, max_depth: int = 0) -> List[Path]:
                 if max_depth >= 2:
                     try:
                         for name2 in os.listdir(str(sub)):
+                            if name2.startswith("."):
+                                continue
                             sub2 = sub / name2
                             try:
                                 if sub2.is_dir():
@@ -3947,7 +4105,10 @@ def recompress_zip_folder(
 
 @app.route("/api/delete", methods=["POST"])
 def api_delete():
-    idx = request.json.get("index", -1)
+    try:
+        idx = int((request.get_json(silent=True) or {}).get("index", -1))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Index invalide"})
     if idx < 0 or idx >= len(STATE["results"]):
         return jsonify({"error": "Index invalide"})
     row = STATE["results"][idx]
@@ -4166,7 +4327,7 @@ def api_delete_bads():
     rows_out = []
     n = 0
     for i, r in enumerate(results):
-        if r.get("status") not in ("bad", "error"):
+        if not _bulk_deletable(r):
             continue
         ok, msg = do_delete(r)
         if ok:
@@ -4174,7 +4335,7 @@ def api_delete_bads():
             rows_out.append({"index": i, "row": _public_row(r), "message": msg})
     return jsonify({
         "ok": True,
-        "message": f"{n} fichier(s) supprimé(s)",
+        "message": f"{n} fichier(s) déplacé(s) dans {TRASH_DIR_NAME}",
         "deleted": n,
         "rows": rows_out,
         "counts": _counts(results),
