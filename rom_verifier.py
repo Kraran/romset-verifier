@@ -168,9 +168,132 @@ def _sha1_fileobj(fileobj) -> tuple:
     return h.hexdigest(), size
 
 
+class ScanCancelled(Exception):
+    """Scan interrompu par l'utilisateur (bouton Annuler)."""
+
+
+class _ScanProgress:
+    """
+    Avancement du scan en cours, lu par l'UI (GET /api/scan/progress) pendant que
+    POST /api/scan travaille. Phases : list (inventaire), quick (cache / nom + taille),
+    hash (lecture des fichiers), archives (ZIP / 7z), match (comparaison au DAT).
+    """
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.cancel_ev = threading.Event()
+        self._reset()
+
+    def _reset(self) -> None:
+        self.running = False
+        self.started = 0.0
+        self.ph = ""
+        self.ph_started = 0.0
+        self.done = self.total = 0
+        self.bytes_done = self.bytes_total = 0
+        self.active: Dict[str, List[Any]] = {}  # chemin → [nom, octets lus, taille]
+        self.counts = {"quick": 0, "cached": 0, "hashed": 0}
+
+    def begin(self) -> None:
+        with self.lock:
+            self._reset()
+            self.cancel_ev.clear()
+            self.running = True
+            self.started = time.time()
+
+    def end(self) -> None:
+        with self.lock:
+            self.running = False
+            self.active.clear()
+            self.cancel_ev.clear()  # sinon une lecture hors scan (réparation…) serait « annulée »
+
+    def phase(self, name: str, total: int = 0, bytes_total: int = 0) -> None:
+        with self.lock:
+            self.ph, self.ph_started = name, time.time()
+            self.done, self.total = 0, int(total)
+            self.bytes_done, self.bytes_total = 0, int(bytes_total)
+            self.active.clear()
+
+    def step(self, n: int = 1, kind: str = "") -> None:
+        with self.lock:
+            self.done += n
+            if kind in self.counts:
+                self.counts[kind] += n
+
+    def file_start(self, path: str, name: str, size: int) -> None:
+        with self.lock:
+            self.active[path] = [name, 0, int(size)]
+
+    def file_bytes(self, path: str, n: int) -> None:
+        with self.lock:
+            a = self.active.get(path)
+            if a is not None:
+                a[1] += n
+                self.bytes_done += n
+
+    def file_end(self, path: str) -> None:
+        with self.lock:
+            self.active.pop(path, None)
+
+    def request_cancel(self) -> bool:
+        with self.lock:
+            if self.running:
+                self.cancel_ev.set()
+            return self.running
+
+    def check(self) -> None:
+        if self.cancel_ev.is_set():
+            raise ScanCancelled("Scan annulé")
+
+    def snapshot(self) -> Dict[str, Any]:
+        with self.lock:
+            now = time.time()
+            ph_elapsed = max(now - self.ph_started, 0.001) if self.ph_started else 0.0
+            rate = self.bytes_done / ph_elapsed if self.ph == "hash" and ph_elapsed > 1 else 0.0
+            eta = None
+            if rate > 0 and self.bytes_total:
+                eta = max(0, int((self.bytes_total - self.bytes_done) / rate))
+            elif self.ph in ("quick", "archives") and self.done and self.total and ph_elapsed > 2:
+                eta = int(ph_elapsed / self.done * (self.total - self.done))
+            active = sorted(self.active.values(), key=lambda a: -a[2])[:4]
+            return {
+                "running": self.running,
+                "cancelling": self.cancel_ev.is_set(),
+                "phase": self.ph,
+                "done": self.done, "total": self.total,
+                "bytes_done": self.bytes_done, "bytes_total": self.bytes_total,
+                "rate": int(rate), "eta": eta,
+                "elapsed": int(now - self.started) if self.started else 0,
+                "active": [{"name": a[0], "done": a[1], "size": a[2]} for a in active],
+                "counts": dict(self.counts),
+            }
+
+
+SCAN_PROGRESS = _ScanProgress()
+
+
+def _read_with_progress(filepath, update) -> int:
+    """Lit un fichier par blocs ; update(chunk) ; avancement + annulation du scan. Retourne la taille."""
+    key = str(filepath)
+    size = 0
+    with open(filepath, "rb", buffering=0) as f:
+        buf = bytearray(_READ_BUF)
+        view = memoryview(buf)
+        while True:
+            n = f.readinto(buf)
+            if not n:
+                break
+            update(view[:n])
+            size += n
+            SCAN_PROGRESS.file_bytes(key, n)
+            SCAN_PROGRESS.check()
+    return size
+
+
 def _sha1_path(filepath: Path) -> tuple:
-    with open(filepath, "rb", buffering=_READ_BUF) as f:
-        return _sha1_fileobj(f)
+    h = hashlib.sha1()
+    size = _read_with_progress(filepath, h.update)
+    return h.hexdigest(), size
 
 
 
@@ -190,8 +313,12 @@ def _crc32_fileobj(fileobj) -> tuple:
 
 def _crc32_path(filepath: Path) -> tuple:
     """CRC32 fichier loose. Retourne (crc_int, size)."""
-    with open(filepath, "rb", buffering=_READ_BUF) as f:
-        return _crc32_fileobj(f)
+    state = [0]
+
+    def upd(chunk):
+        state[0] = zlib.crc32(chunk, state[0])
+    size = _read_with_progress(filepath, upd)
+    return state[0] & 0xFFFFFFFF, size
 
 
 def _probe_dat_kind(dat_path: Path) -> str:
@@ -969,114 +1096,89 @@ class _HashCache:
 HASH_CACHE = _HashCache(HASH_CACHE_FILE)
 
 
+# Gros fichiers lus en même temps : 2 au plus. Sur un NAS (disques durs, SMB),
+# 30 lectures séquentielles parallèles deviennent des accès aléatoires et
+# s'effondrent ; deux flux saturent déjà le réseau. Les petits fichiers restent parallèles.
+BIG_READ_MIN_SIZE = 64 * 1024 * 1024
+BIG_READ_PARALLEL = 2
+_BIG_READ_SEM = threading.BoundedSemaphore(BIG_READ_PARALLEL)
+
+
 def _hash_loose_task(args: Tuple) -> Dict:
     """
     Worker : hash un fichier loose selon hash_mode.
+    args = (chemin, size_set, hash_mode[, quick_index[, use_cache[, cheap_only]]])
     quick_index : voir QUICK_MATCH_MIN_SIZE ; use_cache : voir HASH_CACHE
     (False en vérification approfondie : on recalcule et on met le cache à jour).
+    cheap_only : ne lit pas le contenu ; renvoie {"needs_hash": True, "size": …}
+    si une lecture complète est nécessaire (1re passe rapide du scan).
     """
     path_str, size_set, hash_mode = args[:3]
     quick_index = args[3] if len(args) > 3 else None
     use_cache = bool(args[4]) if len(args) > 4 else False
+    cheap_only = bool(args[5]) if len(args) > 5 else False
     fpath = Path(path_str)
+
+    def res(hashes=None, error=None, **extra):
+        return {
+            "path": path_str, "found": fpath.name, "is_zip": False,
+            "zip_member": "", "hashes": hashes, "error": error, **extra,
+        }
+
     try:
         st = fpath.stat()
         size = st.st_size
     except OSError as e:
-        return {
-            "path": path_str, "found": fpath.name, "is_zip": False,
-            "zip_member": "", "hashes": None, "error": str(e),
-        }
+        return res(error=str(e))
     cacheable = size >= HASH_CACHE_MIN_SIZE
 
     # (en mode CRC, une taille absente du DAT reste filtrée plus bas, comme sans cache)
     if use_cache and cacheable and (hash_mode == "sha1" or not size_set or size in size_set):
         cached = HASH_CACHE.get(fpath, st, hash_mode)
         if cached:
-            return {
-                "path": path_str, "found": fpath.name, "is_zip": False,
-                "zip_member": "", "hashes": cached, "error": None, "cached": True,
-            }
+            return res(cached, cached=True)
 
     if quick_index and size >= QUICK_MATCH_MIN_SIZE:
         hit = quick_index.get((fpath.name.lower(), size))
         if hit:
-            return {
-                "path": path_str, "found": fpath.name, "is_zip": False,
-                "zip_member": "", "hashes": dict(hit), "error": None, "quick": True,
-            }
+            return res(dict(hit), quick=True)
 
-    # CHD : SHA1 header instantané (MAME / MAMERedump)
+    # CHD : SHA1 header instantané (MAME / MAMERedump) ; header illisible → hash du fichier
     if fpath.suffix.lower() == ".chd":
         sha1 = read_chd_sha1(fpath)
         if sha1:
-            return {
-                "path": path_str, "found": fpath.name, "is_zip": False,
-                "zip_member": "", "hashes": {
-                    "size": size, "crc": "", "crc_int": -1,
-                    "md5": "", "sha1": sha1,
-                }, "error": None,
-            }
-        # fallback hash fichier si header illisible
-        if hash_mode == "sha1":
-            try:
-                sha1, size2 = _sha1_path(fpath)
-                if cacheable:
-                    HASH_CACHE.put(fpath, st, sha1=sha1)
-                return {
-                    "path": path_str, "found": fpath.name, "is_zip": False,
-                    "zip_member": "", "hashes": {
-                        "size": size2, "crc": "", "crc_int": -1,
-                        "md5": "", "sha1": sha1,
-                    }, "error": None,
-                }
-            except Exception as e:
-                return {
-                    "path": path_str, "found": fpath.name, "is_zip": False,
-                    "zip_member": "", "hashes": None, "error": str(e),
-                }
+            return res({"size": size, "crc": "", "crc_int": -1, "md5": "", "sha1": sha1})
 
-    if hash_mode == "sha1":
-        try:
+    # Mode CRC : filtre taille (aucune entrée du DAT n'a cette taille → inutile de lire)
+    if hash_mode != "sha1" and size_set and size not in size_set:
+        return res({"size": size, "crc": "", "crc_int": -1, "md5": "", "sha1": ""}, size_mismatch=True)
+
+    if cheap_only:
+        return res(needs_hash=True, size=size)
+
+    big = size >= BIG_READ_MIN_SIZE
+    if big:
+        _BIG_READ_SEM.acquire()
+    try:
+        SCAN_PROGRESS.check()  # dans le try : une annulation libère toujours la place
+        SCAN_PROGRESS.file_start(path_str, fpath.name, size)
+        if hash_mode == "sha1":
             sha1, size2 = _sha1_path(fpath)
             if cacheable:
                 HASH_CACHE.put(fpath, st, sha1=sha1)
-            return {
-                "path": path_str, "found": fpath.name, "is_zip": False,
-                "zip_member": "", "hashes": {
-                    "size": size2, "crc": "", "crc_int": -1,
-                    "md5": "", "sha1": sha1,
-                }, "error": None,
-            }
-        except Exception as e:
-            return {
-                "path": path_str, "found": fpath.name, "is_zip": False,
-                "zip_member": "", "hashes": None, "error": str(e),
-            }
-
-    # Mode CRC : filtre taille
-    if size_set and size not in size_set:
-        return {
-            "path": path_str, "found": fpath.name, "is_zip": False,
-            "zip_member": "", "hashes": {
-                "size": size, "crc": "", "crc_int": -1, "md5": "", "sha1": "",
-            }, "error": None, "size_mismatch": True,
-        }
-    try:
+            return res({"size": size2, "crc": "", "crc_int": -1, "md5": "", "sha1": sha1})
         crc, size2 = _crc32_path(fpath)
         if cacheable:
             HASH_CACHE.put(fpath, st, crc=f"{crc:08x}")
-        return {
-            "path": path_str, "found": fpath.name, "is_zip": False,
-            "zip_member": "", "hashes": {
-                "size": size2, "crc": f"{crc:08x}", "crc_int": crc, "md5": "", "sha1": "",
-            }, "error": None,
-        }
+        return res({"size": size2, "crc": f"{crc:08x}", "crc_int": crc, "md5": "", "sha1": ""})
+    except ScanCancelled:
+        raise
     except Exception as e:
-        return {
-            "path": path_str, "found": fpath.name, "is_zip": False,
-            "zip_member": "", "hashes": None, "error": str(e),
-        }
+        return res(error=str(e))
+    finally:
+        SCAN_PROGRESS.file_end(path_str)
+        if big:
+            _BIG_READ_SEM.release()
 
 
 def _zip_member_corrupt(zf: zipfile.ZipFile, info: zipfile.ZipInfo) -> Optional[str]:
@@ -1304,6 +1406,23 @@ def _iter_rom_paths(rom_dir: Path, max_depth: int = 0):
     yield from _walk(root, 0)
 
 
+def _tracked(task):
+    """Enveloppe un worker d'archive : nom affiché dans l'avancement + annulation."""
+    def run(args):
+        path_str = args[0] if isinstance(args, tuple) else args
+        SCAN_PROGRESS.check()
+        try:
+            size = os.path.getsize(path_str)
+        except OSError:
+            size = 0
+        SCAN_PROGRESS.file_start(path_str, Path(path_str).name, size)
+        try:
+            return task(args)
+        finally:
+            SCAN_PROGRESS.file_end(path_str)
+    return run
+
+
 def _collect_files(
     rom_dir: Path,
     size_set: set,
@@ -1321,7 +1440,11 @@ def _collect_files(
     # .chd toujours inclus
     loose_ext = set(_LOOSE_EXT) | {".chd"}
 
+    SCAN_PROGRESS.phase("list")
     for fpath in _iter_rom_paths(rom_dir, max_depth=max_depth):
+        SCAN_PROGRESS.step()
+        if len(seen) % 64 == 0:
+            SCAN_PROGRESS.check()
         try:
             # dédup par chemin (Windows case-insensitive)
             key = os.path.normcase(str(fpath))
@@ -1357,27 +1480,52 @@ def _collect_files(
     if loose:
         quick_index = None if deep else _quick_match_index(games_list or [])
         HASH_CACHE.load()
-        tasks = [(p, size_set, hash_mode, quick_index, not deep) for p in loose]
         # chunksize adaptatif : petits lots si peu de fichiers
         chunk = 8 if len(loose) > 64 else max(1, len(loose) // max(workers, 1) or 1)
         try:
+            # 1re passe sans lecture du contenu : cache, nom + taille, en-tête CHD, filtre taille
+            SCAN_PROGRESS.phase("quick", total=len(loose))
+            slots: List[Optional[Dict]] = [None] * len(loose)  # ordre d'origine conservé
+            pending: List[Tuple[int, int]] = []  # (index, taille)
+            tasks = [(p, size_set, hash_mode, quick_index, not deep, True) for p in loose]
             with ThreadPoolExecutor(max_workers=workers) as ex:
-                for result in ex.map(_hash_loose_task, tasks, chunksize=chunk):
-                    inventory.append(result)
+                for i, result in enumerate(ex.map(_hash_loose_task, tasks, chunksize=chunk)):
+                    SCAN_PROGRESS.check()
+                    if result.get("needs_hash"):
+                        pending.append((i, int(result.get("size") or 0)))
+                        SCAN_PROGRESS.step()
+                        continue
+                    SCAN_PROGRESS.step(kind="cached" if result.get("cached") else
+                                       "quick" if result.get("quick") else "")
+                    slots[i] = result
+            # 2e passe : lecture complète (CRC / SHA-1) des fichiers restants
+            if pending:
+                SCAN_PROGRESS.phase("hash", total=len(pending), bytes_total=sum(sz for _i, sz in pending))
+                tasks = [(loose[i], size_set, hash_mode, None, False) for i, _sz in pending]
+                chunk = 1 if len(pending) <= 64 else 4  # gros fichiers : répartition fine
+                with ThreadPoolExecutor(max_workers=workers) as ex:
+                    for (i, _sz), result in zip(pending, ex.map(_hash_loose_task, tasks, chunksize=chunk)):
+                        SCAN_PROGRESS.step(kind="hashed")
+                        slots[i] = result
+            inventory.extend(r for r in slots if r is not None)
         finally:
             HASH_CACHE.save()  # même si le scan est interrompu : les CRC déjà lus sont gardés
 
+    if zips or sevens:
+        SCAN_PROGRESS.phase("archives", total=len(zips) + len(sevens))
     if zips:
         tasks = [(p, size_set, hash_mode, deep) for p in zips]
         chunk = 4 if len(zips) > 32 else 1
         with ThreadPoolExecutor(max_workers=workers) as ex:
-            for batch in ex.map(_hash_zip_task, tasks, chunksize=chunk):
+            for batch in ex.map(_tracked(_hash_zip_task), tasks, chunksize=chunk):
+                SCAN_PROGRESS.step()
                 inventory.extend(batch)
 
     if sevens:
         tasks = [(p, size_set, hash_mode, deep) for p in sevens]
         with ThreadPoolExecutor(max_workers=workers) as ex:
-            for batch in ex.map(_hash_7z_task, tasks, chunksize=4 if len(sevens) > 32 else 1):
+            for batch in ex.map(_tracked(_hash_7z_task), tasks, chunksize=4 if len(sevens) > 32 else 1):
+                SCAN_PROGRESS.step()
                 inventory.extend(batch)
 
     # RAR : signalé (statut « error », jamais supprimé en masse) plutôt qu'ignoré en silence
@@ -2016,7 +2164,9 @@ def scan_mame_nonmerged(
     # Index des zip (stem lower → path) — priorité à la racine (profondeur plus faible)
     zips: Dict[str, str] = {}
     zips_depth: Dict[str, int] = {}
+    SCAN_PROGRESS.phase("list")
     for fpath in _iter_rom_paths(rom_dir, max_depth=max_depth):
+        SCAN_PROGRESS.step()
         try:
             if fpath.suffix.lower() != ".zip":
                 continue
@@ -2039,9 +2189,13 @@ def scan_mame_nonmerged(
     catalog_by_path: Dict[str, Dict[str, Any]] = {}
     workers = max(4, min(_MAX_WORKERS, (os.cpu_count() or 4) * 2))
     if zip_paths:
+        SCAN_PROGRESS.phase("archives", total=len(zip_paths))
+        task = _tracked(functools.partial(_zip_catalog_task, deep=deep))
         with ThreadPoolExecutor(max_workers=workers) as ex:
-            for cat in ex.map(functools.partial(_zip_catalog_task, deep=deep), zip_paths, chunksize=4):
+            for cat in ex.map(task, zip_paths, chunksize=4):
+                SCAN_PROGRESS.step()
                 catalog_by_path[cat["path"]] = cat
+    SCAN_PROGRESS.phase("match", total=len(machines))
 
     # Pool CRC construit pendant le catalogue
     pool: Dict[int, List[Dict[str, Any]]] = {}
@@ -2214,7 +2368,16 @@ def scan_mame_nonmerged(
     return results
 
 
-def scan_roms(
+def scan_roms(*args, **kwargs) -> List[Dict]:
+    """Scan d'un dossier (voir _scan_roms) ; avancement lisible via GET /api/scan/progress."""
+    SCAN_PROGRESS.begin()
+    try:
+        return _scan_roms(*args, **kwargs)
+    finally:
+        SCAN_PROGRESS.end()
+
+
+def _scan_roms(
     rom_dir: Path,
     rom_map: Dict,
     games_list: List[Dict],
@@ -2246,6 +2409,7 @@ def scan_roms(
         rom_dir, size_set, hash_mode, max_depth=max_depth, skip_zips=skip_zips, deep=deep,
         games_list=games_list,
     )
+    SCAN_PROGRESS.phase("match")
 
     # Index hash → TOUS les fichiers (un même contenu peut exister en plusieurs exemplaires)
     by_crc: Dict[Tuple, List[Dict]] = {}
@@ -4329,9 +4493,22 @@ def _api_scan_body(path: Path, body: dict):
             "max_depth_auto": effective_depth != max_depth,
             "hash_cache_hits": HASH_CACHE.hits,
         })
+    except ScanCancelled as e:
+        return jsonify({"error": str(e), "cancelled": True})
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)})
+
+
+@app.route("/api/scan/progress")
+def api_scan_progress():
+    """Avancement du scan en cours (lu pendant que /api/scan travaille : pas de verrou)."""
+    return jsonify(SCAN_PROGRESS.snapshot())
+
+
+@app.route("/api/scan/cancel", methods=["POST"])
+def api_scan_cancel():
+    return jsonify({"ok": True, "running": SCAN_PROGRESS.request_cancel()})
 
 @app.route("/api/hash_cache/clear", methods=["POST"])
 @_exclusive(wait=5)
@@ -7356,6 +7533,10 @@ def api_profiles_scan_system(profile_id: str):
             "profile": profile,
             "summary": profile_summary(profile),
         })
+    except ScanCancelled as e:
+        STATE["results"] = []  # le DAT du système est chargé : les anciens résultats ne lui correspondent plus
+        _new_scan_id()
+        return jsonify({"error": str(e), "cancelled": True})
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)})

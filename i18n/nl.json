@@ -375,5 +375,18 @@
   "tools.hash_cache_desc": "De CRC's van al gelezen grote bestanden worden onthouden en hergebruikt zolang het bestand niet verandert (zelfde grootte, zelfde datum). De cache legen dwingt herberekening bij de volgende scan.",
   "tools.hash_cache_clear": "🗑 Cache legen",
   "ui.hash_cache_hits": "{n} CRC's uit de cache",
-  "ui.hash_cache_cleared": "Cache geleegd ({n} items)"
+  "ui.hash_cache_cleared": "Cache geleegd ({n} items)",
+  "prog.list": "Bestanden inventariseren…",
+  "prog.quick": "Snelle herkenning (cache, naam + grootte)…",
+  "prog.hash": "CRC's berekenen (bestanden lezen)…",
+  "prog.archives": "Archieven lezen…",
+  "prog.match": "Vergelijken met de DAT…",
+  "prog.cancel": "Scan annuleren",
+  "prog.cancelling": "Bezig met annuleren…",
+  "prog.found": "{n} bestanden gevonden",
+  "prog.eta": "≈ {t} resterend",
+  "prog.elapsed": "{t} verstreken",
+  "prog.counts": "{quick} op naam + grootte · {cached} uit cache · {hashed} gelezen",
+  "prog.units": "B,KB,MB,GB,TB",
+  "toast.scan_cancelled": "Scan geannuleerd"
 }

@@ -375,5 +375,18 @@
   "tools.hash_cache_desc": "Die CRCs bereits gelesener großer Dateien werden gespeichert und wiederverwendet, solange sich die Datei nicht ändert (gleiche Größe, gleiches Datum). Das Leeren des Caches erzwingt die Neuberechnung beim nächsten Scan.",
   "tools.hash_cache_clear": "🗑 Cache leeren",
   "ui.hash_cache_hits": "{n} CRCs aus dem Cache",
-  "ui.hash_cache_cleared": "Cache geleert ({n} Einträge)"
+  "ui.hash_cache_cleared": "Cache geleert ({n} Einträge)",
+  "prog.list": "Dateien werden erfasst…",
+  "prog.quick": "Schnellerkennung (Cache, Name + Größe)…",
+  "prog.hash": "CRC-Berechnung (Dateien werden gelesen)…",
+  "prog.archives": "Archive werden gelesen…",
+  "prog.match": "Abgleich mit dem DAT…",
+  "prog.cancel": "Scan abbrechen",
+  "prog.cancelling": "Wird abgebrochen…",
+  "prog.found": "{n} Dateien gefunden",
+  "prog.eta": "≈ {t} verbleibend",
+  "prog.elapsed": "{t} vergangen",
+  "prog.counts": "{quick} über Name + Größe · {cached} aus dem Cache · {hashed} gelesen",
+  "prog.units": "B,KB,MB,GB,TB",
+  "toast.scan_cancelled": "Scan abgebrochen"
 }

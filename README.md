@@ -72,6 +72,7 @@ python rom_verifier.py --open
 | ZIP / 7z content | Fast scan trusts the CRC stored in the archive header; tick **Deep check** to decompress every file and detect corrupted data (much slower) |
 | Large loose files (≥ 64 MB: ISO, BIN…) | Fast scan matches them by exact **name + size** without reading them (rows say *CRC not computed*); **Deep check** computes the full CRC |
 | CRC cache (loose files ≥ 1 MB) | Every CRC / SHA-1 actually computed is stored in `cache/hash_cache.json` and reused while the file keeps the same size and modification date — it takes precedence over the name + size match. **Deep check** ignores and refreshes it; *Tools → CRC cache* clears it |
+| Scan progress | Progress bar with the current phase, the files being read (with their own %), throughput and estimated time left, plus a **Cancel** button. Large files (≥ 64 MB) are read **two at a time** — on a NAS, many parallel reads turn into random I/O and are much slower |
 | Merged / split MAME | Not supported |
 | `.7z` archives | Read-only, No-Intro / Redump mode (needs `py7zr`, installed by the launchers): archive can be renamed, not files inside. Arcade sets: `.zip` only |
 | `.rar` archives | Not supported: reported as errors in the scan |

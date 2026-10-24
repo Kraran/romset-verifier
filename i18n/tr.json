@@ -375,5 +375,18 @@
   "tools.hash_cache_desc": "Daha önce okunan büyük dosyaların CRC'leri saklanır ve dosya değişmediği sürece (aynı boyut, aynı tarih) yeniden kullanılır. Önbelleği temizlemek bir sonraki taramada yeniden hesaplamayı zorunlu kılar.",
   "tools.hash_cache_clear": "🗑 Önbelleği temizle",
   "ui.hash_cache_hits": "Önbellekten {n} CRC",
-  "ui.hash_cache_cleared": "Önbellek temizlendi ({n} kayıt)"
+  "ui.hash_cache_cleared": "Önbellek temizlendi ({n} kayıt)",
+  "prog.list": "Dosyalar listeleniyor…",
+  "prog.quick": "Hızlı tanıma (önbellek, ad + boyut)…",
+  "prog.hash": "CRC hesaplanıyor (dosyalar okunuyor)…",
+  "prog.archives": "Arşivler okunuyor…",
+  "prog.match": "DAT ile karşılaştırılıyor…",
+  "prog.cancel": "Taramayı iptal et",
+  "prog.cancelling": "İptal ediliyor…",
+  "prog.found": "{n} dosya bulundu",
+  "prog.eta": "≈ {t} kaldı",
+  "prog.elapsed": "{t} geçti",
+  "prog.counts": "{quick} ad + boyutla · {cached} önbellekten · {hashed} okundu",
+  "prog.units": "B,KB,MB,GB,TB",
+  "toast.scan_cancelled": "Tarama iptal edildi"
 }

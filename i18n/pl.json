@@ -375,5 +375,18 @@
   "tools.hash_cache_desc": "CRC już odczytanych dużych plików są zapamiętywane i używane ponownie, dopóki plik się nie zmieni (ten sam rozmiar, ta sama data). Wyczyszczenie pamięci wymusza ich ponowne obliczenie przy następnym skanie.",
   "tools.hash_cache_clear": "🗑 Wyczyść pamięć",
   "ui.hash_cache_hits": "{n} CRC z pamięci podręcznej",
-  "ui.hash_cache_cleared": "Pamięć wyczyszczona ({n} pozycji)"
+  "ui.hash_cache_cleared": "Pamięć wyczyszczona ({n} pozycji)",
+  "prog.list": "Spis plików…",
+  "prog.quick": "Szybka identyfikacja (pamięć podręczna, nazwa + rozmiar)…",
+  "prog.hash": "Obliczanie CRC (odczyt plików)…",
+  "prog.archives": "Odczyt archiwów…",
+  "prog.match": "Porównywanie z DAT…",
+  "prog.cancel": "Anuluj skan",
+  "prog.cancelling": "Anulowanie…",
+  "prog.found": "Znaleziono plików: {n}",
+  "prog.eta": "≈ pozostało {t}",
+  "prog.elapsed": "upłynęło {t}",
+  "prog.counts": "{quick} po nazwie + rozmiarze · {cached} z pamięci · {hashed} odczytanych",
+  "prog.units": "B,KB,MB,GB,TB",
+  "toast.scan_cancelled": "Skan anulowany"
 }

@@ -375,5 +375,18 @@
   "tools.hash_cache_desc": "Les CRC des gros fichiers déjà lus sont mémorisés et réutilisés tant que le fichier n'a pas changé (même taille, même date). Vider le cache force leur recalcul au prochain scan.",
   "tools.hash_cache_clear": "🗑 Vider le cache",
   "ui.hash_cache_hits": "{n} CRC repris du cache",
-  "ui.hash_cache_cleared": "Cache vidé ({n} entrées)"
+  "ui.hash_cache_cleared": "Cache vidé ({n} entrées)",
+  "prog.list": "Inventaire des fichiers…",
+  "prog.quick": "Identification rapide (cache, nom + taille)…",
+  "prog.hash": "Calcul des CRC (lecture des fichiers)…",
+  "prog.archives": "Lecture des archives…",
+  "prog.match": "Comparaison avec le DAT…",
+  "prog.cancel": "Annuler le scan",
+  "prog.cancelling": "Annulation en cours…",
+  "prog.found": "{n} fichiers trouvés",
+  "prog.eta": "≈ {t} restant",
+  "prog.elapsed": "{t} écoulé",
+  "prog.counts": "{quick} par nom + taille · {cached} depuis le cache · {hashed} lus",
+  "prog.units": "o,Ko,Mo,Go,To",
+  "toast.scan_cancelled": "Scan annulé"
 }

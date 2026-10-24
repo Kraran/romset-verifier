@@ -375,5 +375,18 @@
   "tools.hash_cache_desc": "CRC'er for store filer, der allerede er læst, gemmes og genbruges, så længe filen ikke ændres (samme størrelse, samme dato). Tømning af cachen tvinger genberegning ved næste scan.",
   "tools.hash_cache_clear": "🗑 Tøm cache",
   "ui.hash_cache_hits": "{n} CRC'er fra cachen",
-  "ui.hash_cache_cleared": "Cache tømt ({n} poster)"
+  "ui.hash_cache_cleared": "Cache tømt ({n} poster)",
+  "prog.list": "Optæller filer…",
+  "prog.quick": "Hurtig genkendelse (cache, navn + størrelse)…",
+  "prog.hash": "Beregner CRC (læser filer)…",
+  "prog.archives": "Læser arkiver…",
+  "prog.match": "Sammenligner med DAT…",
+  "prog.cancel": "Annullér scan",
+  "prog.cancelling": "Annullerer…",
+  "prog.found": "{n} filer fundet",
+  "prog.eta": "≈ {t} tilbage",
+  "prog.elapsed": "{t} forløbet",
+  "prog.counts": "{quick} via navn + størrelse · {cached} fra cache · {hashed} læst",
+  "prog.units": "B,KB,MB,GB,TB",
+  "toast.scan_cancelled": "Scan annulleret"
 }

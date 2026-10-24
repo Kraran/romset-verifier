@@ -375,5 +375,18 @@
   "tools.hash_cache_desc": "CRC för stora filer som redan lästs sparas och återanvänds så länge filen inte ändras (samma storlek, samma datum). Att tömma cachen tvingar fram omberäkning vid nästa skanning.",
   "tools.hash_cache_clear": "🗑 Töm cache",
   "ui.hash_cache_hits": "{n} CRC från cachen",
-  "ui.hash_cache_cleared": "Cache tömd ({n} poster)"
+  "ui.hash_cache_cleared": "Cache tömd ({n} poster)",
+  "prog.list": "Inventerar filer…",
+  "prog.quick": "Snabb identifiering (cache, namn + storlek)…",
+  "prog.hash": "Beräknar CRC (läser filer)…",
+  "prog.archives": "Läser arkiv…",
+  "prog.match": "Jämför med DAT…",
+  "prog.cancel": "Avbryt skanning",
+  "prog.cancelling": "Avbryter…",
+  "prog.found": "{n} filer hittade",
+  "prog.eta": "≈ {t} kvar",
+  "prog.elapsed": "{t} förflutet",
+  "prog.counts": "{quick} via namn + storlek · {cached} från cache · {hashed} lästa",
+  "prog.units": "B,KB,MB,GB,TB",
+  "toast.scan_cancelled": "Skanning avbruten"
 }
