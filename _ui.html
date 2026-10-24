@@ -1458,7 +1458,7 @@ function closeToolsModal() {
 async function runRezip() {
   const path = (document.getElementById('toolsRezipPath').value || '').trim();
   if (!path) {
-    toast('Indiquez un dossier', false);
+    toast(t('ui.need_folder'), false);
     return;
   }
   const sub = document.getElementById('toolsRezipSubdirs');
@@ -1494,10 +1494,10 @@ async function runRezip() {
     if (!files.length) {
       hideLoading();
       const sample = (listing.sample_entries || []).slice(0, 15).join(', ');
-      const msg = 'Aucun .zip dans :\n' + folderUsed +
-        (sample ? ('\n\nContenu vu par le serveur :\n' + sample) : '\n\n(dossier vide ou inaccessible)');
+      const msg = t('ui.rezip_none_in', { path: folderUsed }) +
+        (sample ? ('\n\n' + t('ui.rezip_seen') + '\n' + sample) : '\n\n' + t('ui.rezip_empty_dir'));
       alert(msg);
-      toast('Aucun fichier .zip trouvé', false);
+      toast(t('ui.rezip_none'), false);
       return;
     }
   } catch (e) {
@@ -1554,14 +1554,14 @@ async function runRezip() {
     shown = reportItems.filter(function (x) { return !x.ok; })
       .concat(reportItems.filter(function (x) { return x.ok; }).slice(0, 80));
   }
-  showReport('Compte rendu — Recompression ZIP', reportHtml([
-    { label: 'Dossier', value: folderUsed },
+  showReport(t('ui.rezip_report'), reportHtml([
+    { label: t('tools.folder'), value: folderUsed },
     { label: 'Total', value: total },
     { label: 'OK', value: ok, cls: 'ok' },
-    { label: 'Échecs', value: fail, cls: fail ? 'fail' : '' },
-    { label: 'Économisé', value: formatSize(Math.max(0, savedTot)), cls: savedTot > 0 ? 'ok' : '' },
+    { label: t('report.failed'), value: fail, cls: fail ? 'fail' : '' },
+    { label: t('ui.saved'), value: formatSize(Math.max(0, savedTot)), cls: savedTot > 0 ? 'ok' : '' },
   ], shown));
-  toast(total + ' ZIP : ' + ok + ' OK' + (fail ? (', ' + fail + ' échec(s)') : ''), !fail);
+  toast(total + ' ZIP : ' + ok + ' OK' + (fail ? t('toast.deleted_fail', { n: fail }) : ''), !fail);
 }
 
 
@@ -1633,11 +1633,7 @@ async function api(url, opts = {}) {
   if (!ct.includes('application/json')) {
     const text = await r.text();
     const preview = text.replace(/\s+/g, ' ').slice(0, 120);
-    throw new Error(
-      'API ' + url + ' a renvoyé du HTML/texte (HTTP ' + r.status + ') au lieu de JSON. ' +
-      'Relancez RomSet Verifier (fermez la fenêtre Lancer.bat puis rouvrez). ' +
-      'Aperçu : ' + preview
-    );
+    throw new Error(t('ui.api_not_json', { url: url, status: r.status, preview: preview }));
   }
   const data = await r.json();
   if (data && typeof data.scan_id === 'string') SCAN_ID = data.scan_id;
@@ -1984,7 +1980,7 @@ function rowHtml(r) {
   const sel = SELECTED.has(r._idx) ? 'selected' : '';
   const drv = r.driver_status || '';
   const drvCls = drv ? ('drv-' + drv) : '';
-  return `<tr class="${sel}" onclick="openResultDetail(${r._idx})" style="cursor:pointer" title="Cliquer pour le détail">
+  return `<tr class="${sel}" onclick="openResultDetail(${r._idx})" style="cursor:pointer" title="${esc(t('ui.click_detail'))}">
       <td class="col-check" onclick="event.stopPropagation()">
         <input type="checkbox" ${checked} onchange="toggleCheck(${r._idx}, this.checked)">
       </td>
@@ -2041,7 +2037,7 @@ function renderTable() {
   renderVisible();
 
   const rc = document.getElementById('rowCount');
-  if (rc) rc.textContent = VIEW_ROWS.length + ' / ' + RESULTS.length + ' lignes';
+  if (rc) rc.textContent = t('ui.rows', { shown: VIEW_ROWS.length, total: RESULTS.length });
 
   const allBox = document.getElementById('checkAll');
   if (allBox) {
@@ -2362,7 +2358,7 @@ function clearScanResults() {
   const tbody = document.getElementById('tbody');
   if (tbody) tbody.innerHTML = '';
   const rc = document.getElementById('rowCount');
-  if (rc) rc.textContent = '0 / 0 lignes';
+  if (rc) rc.textContent = t('ui.rows', { shown: 0, total: 0 });
   try {
     updateSummary({ total: 0, good: 0, rename: 0, bad: 0, missing: 0, error: 0, incomplete: 0 });
   } catch (e) {}
@@ -2706,7 +2702,7 @@ async function actRepair() {
       const repaired = data.repaired || 0;
       for (const x of (data.rows || [])) {
         if (RESULTS[x.index] !== undefined) RESULTS[x.index] = Object.assign({}, RESULTS[x.index], x.row || {});
-        items.push({ ok: true, action: 'Réparé', from: (x.row && (x.row.game || x.row.found)) || r.game || '', to: x.message || '' });
+        items.push({ ok: true, action: t('ui.act_repaired'), from: (x.row && (x.row.game || x.row.found)) || r.game || '', to: x.message || '' });
       }
       for (const f of (data.failed || [])) {
         fail++;
@@ -2735,7 +2731,7 @@ async function actRepair() {
     { label: t('report.failed') || 'Échecs', value: fail, cls: fail ? 'fail' : '' },
   ], items));
   if (fail && !ok) toast(t('toast.need_selection_repair') || 'Réparation échouée — voir le compte rendu', false);
-  else if (ok) toast((ok + ' réparé(s)') + (fail ? (', ' + fail + ' échec(s)') : ''), !fail);
+  else if (ok) toast(t('ui.n_repaired', { n: ok }) + (fail ? t('toast.deleted_fail', { n: fail }) : ''), !fail);
 }
 
 async function actRepairAll() {
@@ -2750,7 +2746,7 @@ async function actRename() {
   if (!idxs.length) return toast(t('toast.need_selection_rename'), false);
   const items = [];
   let ok = 0, fail = 0;
-  showLoading('Renommage en cours…', '0 / ' + idxs.length);
+  showLoading(t('ui.renaming'), '0 / ' + idxs.length);
   try {
     let n = 0;
     for (const i of idxs) {
@@ -2767,7 +2763,7 @@ async function actRename() {
       RESULTS[i] = data.row; INDEXED = []; // force rebuild
       ok++;
       const to = data.row.found || data.message || '';
-      items.push({ ok: true, action: 'Renomme', from: from, to: to });
+      items.push({ ok: true, action: t('ui.act_renamed'), from: from, to: to });
       if (data.counts) updateSummary(data.counts);
     }
   } finally {
@@ -2776,8 +2772,8 @@ async function actRename() {
   SELECTED.clear();
   renderTable();
   showReport(t('report.rename'), reportHtml([
-    { label: 'Renommees', value: ok, cls: 'ok' },
-    { label: 'Echecs', value: fail, cls: fail ? 'fail' : '' },
+    { label: t('report.renamed'), value: ok, cls: 'ok' },
+    { label: t('report.failed'), value: fail, cls: fail ? 'fail' : '' },
   ], items));
 }
 
@@ -2893,7 +2889,7 @@ async function actDelete() {
     for (const i of idxs) {
       const r = RESULTS[i];
       if (r && r.status === 'deleted') {
-        items.push({ ok: true, action: 'Supprimé', from: r.game || r.expected || '', to: '' });
+        items.push({ ok: true, action: t('ui.act_deleted'), from: r.game || r.expected || '', to: '' });
       }
     }
   } catch (e) {
@@ -2907,21 +2903,21 @@ async function actDelete() {
   rebuildIndex();
   renderTable();
   showReport(t('report.delete'), reportHtml([
-    { label: 'Supprimées', value: done, cls: 'ok' },
-    { label: 'Échecs', value: fail, cls: fail ? 'fail' : '' },
+    { label: t('report.deleted'), value: done, cls: 'ok' },
+    { label: t('report.failed'), value: fail, cls: fail ? 'fail' : '' },
   ], items));
-  toast(done + ' fichier(s) supprimé(s)' + (fail ? ', ' + fail + ' échec(s)' : ''));
+  toast(t('toast.deleted_n', { n: done, fail: fail ? t('toast.deleted_fail', { n: fail }) : '' }));
 }
 
 async function actFixAll() {
   const pending = RESULTS
     .map((r, i) => ({ r, i }))
     .filter(x => x.r.status === 'rename');
-  if (!pending.length) return toast('Aucune entree a renommer', false);
+  if (!pending.length) return toast(t('ui.nothing_to_rename'), false);
 
   const items = [];
   let ok = 0, fail = 0;
-  showLoading('Correction des noms…', '0 / ' + pending.length);
+  showLoading(t('ui.fixing_names'), '0 / ' + pending.length);
   try {
     let n = 0;
     for (const { r, i } of pending) {
@@ -2936,16 +2932,16 @@ async function actFixAll() {
       }
       RESULTS[i] = data.row; INDEXED = []; // force rebuild
       ok++;
-      items.push({ ok: true, action: 'Renomme', from: from, to: data.row.found || data.message || '' });
+      items.push({ ok: true, action: t('ui.act_renamed'), from: from, to: data.row.found || data.message || '' });
       if (data.counts) updateSummary(data.counts);
     }
   } finally {
     hideLoading();
   }
   renderTable();
-  showReport('Compte rendu — Correction des noms', reportHtml([
-    { label: 'Renommees', value: ok, cls: 'ok' },
-    { label: 'Echecs', value: fail, cls: fail ? 'fail' : '' },
+  showReport(t('ui.fix_report'), reportHtml([
+    { label: t('report.renamed'), value: ok, cls: 'ok' },
+    { label: t('report.failed'), value: fail, cls: fail ? 'fail' : '' },
   ], items));
 }
 
@@ -2956,7 +2952,7 @@ async function actDeleteBads() {
     // pas les ZIP « hors DAT » en arcade (BIOS absent d'un DAT filtré, autre version…)
     .filter(x => x.r.status === 'bad' && x.r.mtype !== 'extra')
     .filter(x => x.r.path);
-  if (!pending.length) return toast('Aucun Bad/Error a supprimer', false);
+  if (!pending.length) return toast(t('ui.no_bads'), false);
   {
     const ok = await openConfirm(
       t('confirm.delete_bads_title') || 'Supprimer les Bad',
@@ -2969,7 +2965,7 @@ async function actDeleteBads() {
   const items = [];
   let done = 0, fail = 0;
   pending.sort((a, b) => b.i - a.i);
-  showLoading('Suppression des Bad…', '0 / ' + pending.length);
+  showLoading(t('ui.deleting_bads'), '0 / ' + pending.length);
   try {
     let n = 0;
     for (const { r, i } of pending) {
@@ -2984,7 +2980,7 @@ async function actDeleteBads() {
       }
       RESULTS[i] = data.row; INDEXED = []; // force rebuild
       done++;
-      items.push({ ok: true, action: 'Supprime', from: from });
+      items.push({ ok: true, action: t('ui.act_deleted'), from: from });
       if (data.counts) updateSummary(data.counts);
     }
   } finally {
@@ -2993,8 +2989,8 @@ async function actDeleteBads() {
   SELECTED = new Set();
   renderTable();
   showReport(t('report.delete_bads'), reportHtml([
-    { label: 'Supprimees', value: done, cls: 'ok' },
-    { label: 'Echecs', value: fail, cls: fail ? 'fail' : '' },
+    { label: t('report.deleted'), value: done, cls: 'ok' },
+    { label: t('report.failed'), value: fail, cls: fail ? 'fail' : '' },
   ], items));
 }
 
@@ -3039,7 +3035,7 @@ async function openBrowser(mode) {
       }
       // exe / xml : navigateur intégré ci-dessous
     } catch (e) {
-      toast('Erreur dialogue : ' + e, false);
+      toast(t('ui.dialog_error', { e: e }), false);
       // continue vers navigateur intégré
     }
   }
@@ -3097,7 +3093,7 @@ async function openBrowser(mode) {
   try {
     await browseTo(start);
   } catch (e) {
-    toast('Erreur parcours : ' + e, false);
+    toast(t('browser.error', { e: e }), false);
   }
 }
 
@@ -3106,12 +3102,12 @@ function closeBrowser() { document.getElementById('browserModal').classList.remo
 
 async function browseTo(path) {
   const listEl = document.getElementById('browserList');
-  if (listEl) listEl.innerHTML = '<div class="modal-item" style="color:var(--text2)">Chargement…</div>';
+  if (listEl) listEl.innerHTML = '<div class="modal-item" style="color:var(--text2)">' + esc(t('status.loading')) + '</div>';
   let data;
   try {
     data = await api('/api/browse?path=' + encodeURIComponent(path) + '&mode=' + BROWSER_MODE);
   } catch (e) {
-    if (listEl) listEl.innerHTML = '<div class="modal-item" style="color:var(--red)">Erreur : ' + esc(String(e)) + '</div>';
+    if (listEl) listEl.innerHTML = '<div class="modal-item" style="color:var(--red)">' + esc(t('ui.error_e', { e: String(e) })) + '</div>';
     return;
   }
   if (data.error) {
@@ -3339,7 +3335,7 @@ function pickFile(path) {
   if (BROWSER_MODE === 'exe') {
     const el = document.getElementById('mameExePath');
     if (el) el.value = path;
-    toast('MAME sélectionné : ' + path);
+    toast(t('browser.mame_selected') + ' : ' + path);
     return;
   }
   const datEl = document.getElementById('datPath');
@@ -3441,20 +3437,20 @@ async function loadFbneoVersions(force) {
   const st = document.getElementById('fbneoVerStatus');
   const hist = document.getElementById('fbneoVerHistory');
   if (!sel) return;
-  if (st) st.textContent = 'Chargement des versions FBNeo…';
+  if (st) st.textContent = t('ui.fbneo_loading');
   try {
     const q = force ? '?refresh=1' : '';
     const data = await api('/api/fbneo/versions' + q);
     if (data.error) {
       if (st) st.textContent = data.error;
-      sel.innerHTML = '<option value="">Erreur</option>';
+      sel.innerHTML = '<option value="">' + esc(t('common.error')) + '</option>';
       return;
     }
     FBNEO_VERSIONS = data.items || [];
     sel.innerHTML = '';
     if (!FBNEO_VERSIONS.length) {
-      sel.innerHTML = '<option value="">Aucune version</option>';
-      if (st) st.textContent = 'Aucune version trouvée';
+      sel.innerHTML = '<option value="">' + esc(t('ui.no_version')) + '</option>';
+      if (st) st.textContent = t('ui.no_version_found');
       return;
     }
     for (const v of FBNEO_VERSIONS) {
@@ -3494,8 +3490,8 @@ async function loadFbneoVersions(force) {
     }
     if (st) st.textContent = FBNEO_VERSIONS.length + ' builds — labels RetroBat / Batocera / Recalbox inclus';
   } catch (e) {
-    if (st) st.textContent = 'Erreur : ' + e;
-    sel.innerHTML = '<option value="">Erreur</option>';
+    if (st) st.textContent = t('ui.error_e', { e: e });
+    sel.innerHTML = '<option value="">' + esc(t('common.error')) + '</option>';
   }
 }
 
@@ -3504,8 +3500,8 @@ async function downloadFbneoVersion() {
   const st = document.getElementById('fbneoVerStatus');
   const id = sel && sel.value;
   if (!id) return toast('Choisissez une version FBNeo', false);
-  if (st) st.textContent = 'Téléchargement DAT FBNeo ' + id + '…';
-  showLoading('Téléchargement FBNeo', id);
+  if (st) st.textContent = t('ui.fbneo_downloading', { id: id });
+  showLoading(t('ui.fbneo_download'), id);
   try {
     const data = await api('/api/fbneo/download', {
       method: 'POST',
@@ -3538,20 +3534,20 @@ async function loadMameVersions(force) {
   if (!force && MAME_VERSIONS.length) {
     return;
   }
-  if (st) st.textContent = 'Chargement des versions MAME…';
-  sel.innerHTML = '<option value="">Chargement…</option>';
+  if (st) st.textContent = t('ui.mame_loading');
+  sel.innerHTML = '<option value="">' + esc(t('status.loading')) + '</option>';
   try {
     const data = await api('/api/mame/versions');
     if (data.error && !(data.items && data.items.length)) {
       if (st) st.textContent = data.error;
-      sel.innerHTML = '<option value="">Erreur de chargement</option>';
+      sel.innerHTML = '<option value="">' + esc(t('ui.load_error')) + '</option>';
       return;
     }
     MAME_VERSIONS = data.items || [];
     sel.innerHTML = '';
     if (!MAME_VERSIONS.length) {
-      sel.innerHTML = '<option value="">Aucune version trouvée</option>';
-      if (st) st.textContent = 'Aucune version listxml disponible';
+      sel.innerHTML = '<option value="">' + esc(t('ui.no_version_found')) + '</option>';
+      if (st) st.textContent = t('ui.no_listxml');
       return;
     }
     for (const v of MAME_VERSIONS) {
@@ -3576,8 +3572,8 @@ async function loadMameVersions(force) {
     if (st) st.textContent = msg;
   } catch (e) {
     console.error(e);
-    if (st) st.textContent = 'Erreur : ' + e;
-    sel.innerHTML = '<option value="">Erreur — réessayez</option>';
+    if (st) st.textContent = t('ui.error_e', { e: e });
+    sel.innerHTML = '<option value="">' + esc(t('ui.error_retry')) + '</option>';
   }
 }
 
@@ -3587,8 +3583,8 @@ async function generateMameXml() {
   const tag = sel && sel.value;
   if (!tag) return toast('Choisissez une version MAME', false);
   const st = document.getElementById('mameGenStatus');
-  st.textContent = 'Téléchargement listxml ' + tag + '…';
-  showLoading('Génération listxml MAME', tag);
+  st.textContent = t('ui.listxml_downloading', { tag: tag });
+  showLoading(t('ui.listxml_generating'), tag);
   try {
     const data = await api('/api/mame/generate', {
       method: 'POST',
@@ -3617,7 +3613,7 @@ async function generateMameXmlLocal() {
   const path = (document.getElementById('mameExePath').value || '').trim();
   if (!path) return toast('Indiquez le chemin de mame.exe', false);
   const st = document.getElementById('mameGenStatus');
-  st.textContent = 'Exécution de mame -listxml… (peut prendre 1–2 min)';
+  st.textContent = t('ui.listxml_running');
   showLoading('mame -listxml', path);
   try {
     const data = await api('/api/mame/generate', {
@@ -3736,14 +3732,14 @@ function addCategoryExclusion(raw) {
   }
   if (input) input.value = '';
   syncCategoryHiddenFields();
-  if (added) toast(added + ' exclusion(s) ajoutée(s)');
+  if (added) toast(t('ui.exclusions_added', { n: added }));
 }
 
 function removeCategoryExclusion(idx) {
   if (idx < 0 || idx >= CAT_EXCLUDE.length) return;
   const removed = CAT_EXCLUDE.splice(idx, 1)[0];
   syncCategoryHiddenFields();
-  toast('Retiré : ' + removed);
+  toast(t('ui.removed', { x: removed }));
 }
 
 function presetCatExclude(list) {
@@ -3766,8 +3762,8 @@ async function loadMameCategories(force) {
   const st = document.getElementById('mameGenStatus');
   const st2 = document.getElementById('catLoadStatus');
   if (CAT_LOADED && !force) return;
-  if (st) st.textContent = 'Chargement Progetto-SNAPS (genre / catlist)…';
-  if (st2) st2.textContent = 'Chargement…';
+  if (st) st.textContent = t('ui.catlist_loading');
+  if (st2) st2.textContent = t('status.loading');
   try {
     const data = await api('/api/mame/categories' + (force ? '?refresh=1' : ''));
     if (data.error) {
@@ -3793,7 +3789,7 @@ async function loadMameCategories(force) {
       }).join('');
     }
     CAT_LOADED = true;
-    const msg = genres.length + ' genres · ' + (data.catlist || []).length + ' catégories catlist';
+    const msg = t('ui.catlist_count', { g: genres.length, c: (data.catlist || []).length });
     if (st) st.textContent = msg;
     if (st2) st2.textContent = msg;
     toast(t('mamegen.categories_loaded') || 'Catégories chargées');
@@ -3855,7 +3851,7 @@ async function analyzeMameSource() {
       const prev = new Set([...biosSel.selectedOptions].map(o => o.value));
       biosSel.innerHTML = '';
       if (!data.bios.length) {
-        biosSel.innerHTML = '<option value="">(aucun BIOS détecté)</option>';
+        biosSel.innerHTML = '<option value="">' + esc(t('ui.no_bios')) + '</option>';
       } else {
         for (const b of data.bios) {
           const opt = document.createElement('option');
@@ -3866,7 +3862,7 @@ async function analyzeMameSource() {
         }
       }
     }
-    if (st) st.textContent = 'Source prête — configurez les filtres puis exportez';
+    if (st) st.textContent = t('ui.source_ready');
   } catch (e) {
     if (st) st.textContent = String(e);
     toast(String(e), false);
@@ -3882,8 +3878,8 @@ async function exportMameFiltered() {
   if (opts.parents_only) opts.include_clones = false;
   const output = (document.getElementById('mameOutName')?.value || '').trim();
   const st = document.getElementById('mameGenStatus');
-  if (st) st.textContent = 'Export filtré en cours…';
-  showLoading('Export MAME filtré…', source);
+  if (st) st.textContent = t('ui.exporting');
+  showLoading(t('ui.exporting_title'), source);
   try {
     const data = await api('/api/mame/export', {
       method: 'POST',
@@ -3905,7 +3901,7 @@ async function exportMameFiltered() {
       }
       st.textContent = msg;
     }
-    toast(data.kept + ' machines exportées');
+    toast(t('ui.exported', { n: data.kept }));
     if (data.path) {
       document.getElementById('datPath').value = data.path;
       try { await loadDat(); } catch (e) { toast('Export OK mais chargement DAT : ' + e, false); }
@@ -3931,7 +3927,7 @@ async function setPack(pack) {
     const el = document.getElementById('pack-' + id);
     if (el) el.className = (pack === id) ? 'primary' : '';
   });
-  document.getElementById('datsStatus').textContent = 'Chargement du catalogue ' + pack + '…';
+  document.getElementById('datsStatus').textContent = t('ui.catalog_loading', { pack: pack });
   document.getElementById('datsList').innerHTML = '';
   try {
     const data = await api('/api/dats/catalog?pack=' + encodeURIComponent(pack));
@@ -3940,14 +3936,14 @@ async function setPack(pack) {
     const noRemote = (pack === 'mameredump' || pack === 'mame' || pack === 'fbneo');
     if (!DAT_ITEMS.length && noRemote) {
       document.getElementById('datsStatus').textContent =
-        data.label + ' — aucun DAT local. Cliquez « Tout télécharger » pour récupérer le pack.';
+        t('ui.no_local_dat_pack', { label: data.label });
     } else {
       document.getElementById('datsStatus').textContent =
         data.label + ' — ' + (data.count || DAT_ITEMS.length) + ' DAT disponibles';
     }
     renderDatsList();
   } catch (e) {
-    document.getElementById('datsStatus').textContent = 'Erreur : ' + e;
+    document.getElementById('datsStatus').textContent = t('ui.error_e', { e: e });
   }
 }
 
@@ -3956,13 +3952,13 @@ function renderDatsList() {
   const list = document.getElementById('datsList');
   const rows = DAT_ITEMS.filter(it => !q || it.name.toLowerCase().includes(q) || (it.file || '').toLowerCase().includes(q) || (it.version || '').toLowerCase().includes(q));
   if (!rows.length) {
-    list.innerHTML = '<div class="modal-item" style="color:var(--text2)">Aucun resultat — utilisez « Tout telecharger » si besoin</div>';
+    list.innerHTML = '<div class="modal-item" style="color:var(--text2)">' + esc(t('ui.no_result')) + '</div>';
     return;
   }
   list.innerHTML = rows.map(it => {
     const f = it.file || '';
     const isLocal = it.local === '1' || f.indexOf('/') === 0 || /^[A-Za-z]:[\\/]/.test(f);
-    const action = isLocal ? 'Charger' : 'Telecharger';
+    const action = isLocal ? t('ui.load') : t('ui.download');
     return '<div class="modal-item" onclick="downloadOne(' + jsArg(it.file) + ')">' +
       '<span class="icon">📄</span><div style="flex:1;min-width:0">' +
       '<div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(it.name) + '</div>' +
@@ -3972,14 +3968,14 @@ function renderDatsList() {
 }
 
 async function downloadOne(file) {
-  document.getElementById('datsStatus').textContent = 'Telechargement de ' + file + ' (pack mis en cache si besoin)…';
-  showLoading('Telechargement DAT…', file);
+  document.getElementById('datsStatus').textContent = t('ui.dat_downloading', { file: file });
+  showLoading(t('ui.dat_downloading_title'), file);
   try {
     const data = await api('/api/dats/download_one', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pack: DAT_PACK, file }) });
     if (data.error) { toast(data.error, false); document.getElementById('datsStatus').textContent = data.error; return; }
     document.getElementById('datPath').value = data.path;
     document.getElementById('datsStatus').textContent = 'OK → ' + data.path;
-    toast('DAT prêt : ' + data.file);
+    toast(t('ui.dat_ready', { file: data.file }));
     await loadDat();
   } catch (e) { toast(String(e), false); }
   finally { hideLoading(); }
@@ -3997,32 +3993,32 @@ async function downloadPack() {
     );
     if (!ok) return;
   }
-  document.getElementById('datsStatus').textContent = 'Telechargement du pack complet en cours…';
-  showLoading('Telechargement du pack ' + DAT_PACK + '…', 'Cela peut prendre plusieurs minutes');
+  document.getElementById('datsStatus').textContent = t('ui.pack_downloading');
+  showLoading(t('ui.pack_downloading_title', { pack: DAT_PACK }), t('ui.may_take_minutes'));
   try {
     const data = await api('/api/dats/download_pack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pack: DAT_PACK }) });
     if (data.error) { toast(data.error, false); document.getElementById('datsStatus').textContent = data.error; return; }
-    document.getElementById('datsStatus').textContent = data.label + ' : ' + data.extracted + ' DAT extraits → ' + data.dir;
-    toast(data.extracted + ' DAT installés');
+    document.getElementById('datsStatus').textContent = t('ui.pack_extracted', { label: data.label, n: data.extracted, dir: data.dir });
+    toast(t('ui.dats_installed', { n: data.extracted }));
     await setPack(DAT_PACK);
   } catch (e) { toast(String(e), false); }
   finally { hideLoading(); }
 }
 
 async function loadLocalDats() {
-  document.getElementById('datsStatus').textContent = 'DAT locaux…';
+  document.getElementById('datsStatus').textContent = t('ui.local_dats_loading');
   try {
     const data = await api('/api/dats/local');
     if (data.error) { document.getElementById('datsStatus').textContent = data.error; return; }
     DAT_ITEMS = (data.dats || []).map(d => ({ name: d.name, version: d.rel, file: d.path, _local: true }));
-    document.getElementById('datsStatus').textContent = DAT_ITEMS.length + ' DAT locaux';
+    document.getElementById('datsStatus').textContent = t('ui.n_local_dats', { n: DAT_ITEMS.length });
     const list = document.getElementById('datsList');
-    if (!DAT_ITEMS.length) { list.innerHTML = '<div class="modal-item" style="color:var(--text2)">Aucun DAT dans dat/</div>'; return; }
+    if (!DAT_ITEMS.length) { list.innerHTML = '<div class="modal-item" style="color:var(--text2)">' + esc(t('ui.no_dat_in_dir')) + '</div>'; return; }
     list.innerHTML = DAT_ITEMS.map(it => '<div class="modal-item" onclick="pickLocalDat(' + jsArg(it.file) + ')">' +
       '<span class="icon">📁</span><div style="flex:1;min-width:0">' +
       '<div style="font-weight:500">' + esc(it.name) + '</div>' +
       '<div style="font-size:11px;color:var(--text2)">' + esc(it.version) + '</div></div>' +
-      '<span style="font-size:11px;color:var(--accent)">Charger</span></div>').join('');
+      '<span style="font-size:11px;color:var(--accent)">' + esc(t('ui.load')) + '</span></div>').join('');
   } catch (e) { document.getElementById('datsStatus').textContent = String(e); }
 }
 
@@ -4079,7 +4075,7 @@ async function loadProfilesList() {
         '<div class="meta">' + esc(p.root || '') + '</div>' +
         '<div class="stats">' +
           '<span>' + (p.systems_count || 0) + ' ' + (t('prof.systems') || 'systèmes') + '</span>' +
-          (p.scanned_count ? '<span>' + p.scanned_count + ' scannés</span>' : '') +
+          (p.scanned_count ? '<span>' + esc(t('ui.n_scanned', { n: p.scanned_count })) + '</span>' : '') +
           (p.total_games ? '<span>' + p.total_games + ' jeux</span>' : '') +
           (pct !== null ? '<span>' + pct + '% good</span>' : '') +
           (p.updated_at ? '<span>' + esc(p.updated_at) + '</span>' : '') +
@@ -4136,7 +4132,7 @@ async function createProfile() {
       return;
     }
     closeProfModal();
-    toast((t('prof.created') || 'Profil créé') + ' — ' + (data.profile.systems || []).length + ' systèmes');
+    toast(t('prof.created') + ' — ' + t('ui.n_systems', { n: (data.profile.systems || []).length }));
     await openProfile(data.profile.id);
   } catch (e) {
     if (st) st.textContent = String(e);
@@ -4236,14 +4232,14 @@ function renderProfSystems() {
   }
   body.innerHTML = html || '<tr><td colspan="11" style="color:var(--text2)">Aucun système</td></tr>';
   const info = document.getElementById('profSelInfo');
-  if (info) info.textContent = PROF_SELECTED.size + ' sélectionné(s) · ' + visible + ' affiché(s)';
+  if (info) info.textContent = t('ui.n_selected_shown', { n: PROF_SELECTED.size, v: visible });
 }
 
 function toggleProfSys(id, on) {
   if (on) PROF_SELECTED.add(id);
   else PROF_SELECTED.delete(id);
   const info = document.getElementById('profSelInfo');
-  if (info) info.textContent = PROF_SELECTED.size + ' sélectionné(s)';
+  if (info) info.textContent = t('ui.n_selected', { n: PROF_SELECTED.size });
 }
 
 function toggleProfCheckAll(on) {

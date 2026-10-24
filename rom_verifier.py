@@ -23,7 +23,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 import zlib
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -54,6 +54,8 @@ def _asset(*parts: str) -> Path:
 
 APP_VERSION = "1.1.0-beta"
 APP_NAME = "RomSet Verifier"
+# Dernière version MAME connue hors ligne (la liste en ligne via l'API GitHub la complète)
+MAME_LATEST_KNOWN = 289
 DEFAULT_DAT_DIR = SCRIPT_DIR / "dat"
 DEFAULT_ROMS_DIR = SCRIPT_DIR / "roms"
 CACHE_DIR = SCRIPT_DIR / "cache"
@@ -101,7 +103,7 @@ DAT_PACKS = {
     },
 }
 
-UA = "RomSetVerifier/1.3 (+https://github.com/local)"
+UA = f"RomSetVerifier/{APP_VERSION} (+https://github.com/Kraran/romset-verifier)"
 
 PROFILES_DIR = SCRIPT_DIR / "profiles"
 
@@ -192,17 +194,6 @@ def _crc32_path(filepath: Path) -> tuple:
         return _crc32_fileobj(f)
 
 
-def compute_hashes_stream(fileobj) -> Dict[str, Any]:
-    """API compat : CRC32 + taille."""
-    crc, size = _crc32_fileobj(fileobj)
-    return {"size": size, "crc": f"{crc:08x}", "md5": "", "sha1": ""}
-
-
-def compute_hashes(filepath: Path) -> Dict[str, Any]:
-    crc, size = _crc32_path(filepath)
-    return {"size": size, "crc": f"{crc:08x}", "md5": "", "sha1": ""}
-
-
 def _probe_dat_kind(dat_path: Path) -> str:
     """
     Identifie le type de DAT sans tout charger.
@@ -211,9 +202,6 @@ def _probe_dat_kind(dat_path: Path) -> str:
     - arcade : listxml MAME (<mame>) ou machines avec ROMs CRC (set arcade)
     - standard : No-Intro / Redump / MAMERedump (disks SHA1, roms CRC, etc.)
     """
-    saw_softwarelist = False
-    saw_mame_root = False
-    saw_datafile = False
     saw_sourcefile = False
     n_machine = 0
     n_game = 0
@@ -232,9 +220,7 @@ def _probe_dat_kind(dat_path: Path) -> str:
                 return "softwarelist"
             if tag == "mame":
                 return "arcade"
-            if tag == "datafile":
-                saw_datafile = True
-            elif tag == "machine":
+            if tag == "machine":
                 n_machine += 1
                 if el.get("sourcefile"):
                     saw_sourcefile = True
@@ -821,49 +807,12 @@ def _names_match(a: str, b: str) -> bool:
     return False
 
 
-def match_rom(hashes: Dict, rom_map: Dict, hash_mode: str = "crc") -> Tuple[Optional[Dict], Optional[str]]:
-    if hash_mode == "sha1":
-        sha1 = (hashes.get("sha1") or "").lower()
-        if sha1 and ("sha1", sha1) in rom_map:
-            return rom_map[("sha1", sha1)], "sha1"
-        return None, None
-    crc_i = hashes.get("crc_int")
-    if crc_i is None:
-        try:
-            crc_i = int(hashes["crc"], 16)
-        except (KeyError, ValueError, TypeError):
-            return None, None
-    key = ("crc", crc_i, hashes["size"])
-    if key in rom_map:
-        return rom_map[key], "crc"
-    # fallback sha1 si présent
-    sha1 = (hashes.get("sha1") or "").lower()
-    if sha1 and ("sha1", sha1) in rom_map:
-        return rom_map[("sha1", sha1)], "sha1"
-    return None, None
-
-
 def _err_row(found, path, msg, is_zip=False, member=""):
     return {
         "status": "error", "game": "", "expected": "", "found": found, "path": path,
         "size": 0, "crc": "", "md5": "", "sha1": "", "is_zip": is_zip,
         "zip_member": member, "message": msg,
     }
-
-def _unique_paths(paths) -> List[Path]:
-    """Déduplique les chemins (critique sur Windows, FS insensible à la casse)."""
-    seen = set()
-    out: List[Path] = []
-    for p in paths:
-        try:
-            key = str(p.resolve()).lower()
-        except Exception:
-            key = str(p).lower()
-        if key not in seen:
-            seen.add(key)
-            out.append(p)
-    return out
-
 
 # Extensions reconnues (loose)
 _LOOSE_EXT = frozenset({
@@ -1310,12 +1259,6 @@ def _zip_catalog(zpath: Path, deep: bool = False) -> Dict[str, Any]:
 
 def _zip_catalog_task(path_str: str, deep: bool = False) -> Dict[str, Any]:
     return _zip_catalog(Path(path_str), deep=deep)
-
-
-def _zip_crc_index(zpath: Path) -> Dict[int, List[Tuple[str, int]]]:
-    """Compat : index CRC seul."""
-    return _zip_catalog(zpath).get("crc_idx") or {}
-
 
 
 def _scan_one_mame_machine(args: Tuple) -> Dict:
@@ -1827,36 +1770,9 @@ def _scan_one_mame_machine(args: Tuple) -> Dict:
 
 
 
-def build_rom_pool(rom_dir: Path, max_depth: int = 0) -> Dict[int, List[Dict[str, Any]]]:
-    """
-    Index global CRC32 → [{zip, member, size}] pour tous les ZIP du dossier.
-    Sert à localiser une ROM manquante présente dans un autre set.
-    """
-    pool: Dict[int, List[Dict[str, Any]]] = {}
-    for fpath in _iter_rom_paths(rom_dir, max_depth=max_depth):
-        if fpath.suffix.lower() != ".zip":
-            continue
-        try:
-            with zipfile.ZipFile(str(fpath), "r") as zf:
-                for info in zf.infolist():
-                    if info.is_dir() or info.file_size <= 0:
-                        continue
-                    crc = info.CRC & 0xFFFFFFFF
-                    pool.setdefault(crc, []).append({
-                        "zip": str(fpath),
-                        "zip_name": fpath.name,
-                        "member": info.filename,
-                        "size": info.file_size,
-                    })
-        except Exception:
-            continue
-    return pool
-
-
 def _annotate_available_roms(results: List[Dict], pool: Dict[int, List[Dict[str, Any]]]) -> None:
     """Marque les composantes missing dont le CRC existe dans un autre ZIP."""
     for row in results:
-        own_zip = (row.get("path") or "").replace("\\", "/")
         own_name = Path(row.get("path") or row.get("found") or "").name.lower()
         comps = row.get("components") or []
         n_avail = 0
@@ -2468,11 +2384,6 @@ def _remove_zip_members(zip_path: Path, members: List[str]) -> Tuple[int, int]:
         return 0, kept
     _safe_replace(tmp, zip_path)
     return removed, kept
-
-
-def _rename_zip_member(zip_path: Path, old_member: str, new_member: str) -> None:
-    """Renomme un membre dans un ZIP (réécriture atomique via fichier temporaire)."""
-    _batch_rename_zip_members(zip_path, {old_member: new_member})
 
 
 def _norm_zip_name(name: str) -> str:
@@ -3109,12 +3020,7 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                     if hit is not None:
                         plan[expected] = hit
                         used_sources.add(hit)
-                        if hit not in selected:
-                            try:
-                                selected.add(hit)
-                            except Exception as e:
-                                notes.append(f"Lecture {hit}: {e}")
-                                plan.pop(expected, None)
+                        selected.add(hit)
 
                 # Passe C : même CRC déjà lu → DUPLIQUER sous le nom attendu
                 for r in roms_req:
@@ -3133,41 +3039,7 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                     if hit is None:
                         hit = cands[0][0]
                     plan[expected] = hit
-                    if hit not in selected:
-                        try:
-                            selected.add(hit)
-                        except Exception as e:
-                            notes.append(f"Lecture dup {hit}: {e}")
-                            plan.pop(expected, None)
-                            continue
-                    notes.append(f"dupliquer {Path(hit).name} → {expected}")
-
-                # 1b) ROMs encore absentes du plan mais CRC présent dans le ZIP
-                #     → dupliquer le contenu (2 noms DAT, 1 CRC = 2 fichiers non-merged)
-                for r in roms_req:
-                    expected = Path(r.get("name") or "").name
-                    if not expected or expected in plan:
-                        continue
-                    crc_i = int(r["crc_int"])
-                    cands = by_crc.get(crc_i) or []
-                    if not cands:
-                        continue
-                    # préférer un candidat déjà chargé
-                    hit = None
-                    for real, sz in cands:
-                        if real in selected:
-                            hit = real
-                            break
-                    if hit is None:
-                        hit = cands[0][0]
-                    plan[expected] = hit
-                    if hit not in selected:
-                        try:
-                            selected.add(hit)
-                        except Exception as e:
-                            notes.append(f"Lecture dup {hit}: {e}")
-                            plan.pop(expected, None)
-                            continue
+                    selected.add(hit)
                     notes.append(f"dupliquer {Path(hit).name} → {expected}")
 
                 # 2) Fallback : components du scan (rename/ok/extra with matching CRC)
@@ -3214,12 +3086,7 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                     if real is None:
                         continue
                     plan[expected] = real
-                    if real not in selected:
-                        try:
-                            selected.add(real)
-                        except Exception as e:
-                            notes.append(f"Lecture {real}: {e}")
-                            plan.pop(expected, None)
+                    selected.add(real)
 
                 # 2b) Forcer dans le plan les components "rename" encore absents
                 for c in (row.get("components") or []):
@@ -3243,12 +3110,7 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
                         continue
                     # Autoriser copie d'un membre déjà utilisé (même CRC, 2 noms DAT)
                     plan[expected] = real
-                    if real not in selected:
-                        try:
-                            selected.add(real)
-                        except Exception as e:
-                            notes.append(f"Lecture {real}: {e}")
-                            plan.pop(expected, None)
+                    selected.add(real)
 
                 _repair_log(f"  plan={len(plan)}/{len(roms_req)} members_zip={len(all_reals)}")
 
@@ -4026,6 +3888,23 @@ def _guard_local_only():
         return jsonify({"error": "Requête intersite refusée"}), 403
     return None
 
+@app.errorhandler(400)
+@app.errorhandler(404)
+@app.errorhandler(405)
+@app.errorhandler(413)
+@app.errorhandler(415)
+@app.errorhandler(500)
+def _json_error(e):
+    """Les routes /api/ répondent toujours en JSON (l'UI attend {"error": …}, pas une page HTML)."""
+    from werkzeug.exceptions import HTTPException
+    code = e.code if isinstance(e, HTTPException) else 500
+    if not request.path.startswith("/api/"):
+        return e if isinstance(e, HTTPException) else ("Erreur interne", 500)
+    orig = getattr(e, "original_exception", None)  # 500 : l'exception réelle (déjà journalisée par Flask)
+    desc = (f"{orig.__class__.__name__}: {orig}" if orig else None) or getattr(e, "description", None) or str(e)
+    return jsonify({"error": f"{code} : {desc}"}), code
+
+
 @app.after_request
 def _no_cache(resp):
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
@@ -4169,7 +4048,7 @@ def api_load_dat():
 @app.route("/api/result_detail", methods=["POST"])
 def api_result_detail():
     """Détail d'une entrée de scan (composantes ROM/CHD)."""
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     idx = body.get("index", -1)
     results = STATE.get("results") or []
     try:
@@ -4214,7 +4093,10 @@ def api_scan():
     if not STATE.get("games_list"):
         return jsonify({"error": "Chargez d'abord un DAT"})
     body = request.get_json(silent=True) or {}
-    path = Path((body.get("path") or "").strip())
+    raw = str(body.get("path") or "").strip()
+    if not raw:  # Path("") vaut « . » : sans ce contrôle, on scannerait le dossier courant
+        return jsonify({"error": "Indiquez un dossier de ROMs"})
+    path = Path(raw)
     if not path.is_dir():
         return jsonify({"error": f"Dossier introuvable : {path}"})
     return _api_scan_body(path, body)
@@ -4580,7 +4462,7 @@ def api_delete():
 @app.route("/api/tools/rezip_list", methods=["POST"])
 def api_tools_rezip_list():
     """Liste les .zip d'un dossier (pour traitement progressif côté client)."""
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     path_s = (body.get("path") or STATE.get("roms_path") or str(DEFAULT_ROMS_DIR) or "").strip()
     if not path_s:
         return jsonify({"error": "Indiquez un dossier de ROMs"})
@@ -4618,7 +4500,7 @@ def api_tools_rezip():
       list_only: si true, renvoie uniquement la liste des zip (pas de recompression)
       slim: si true, ne renvoie pas le détail de chaque item OK (gros sets)
     """
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
 
     # --- Listage seul (évite une 2e route si client ancien / partiel) ---
     if body.get("list_only"):
@@ -5271,7 +5153,7 @@ def api_dats_catalog():
 
 @app.route("/api/dats/download_pack", methods=["POST"])
 def api_dats_download_pack():
-    pack_id = (request.json or {}).get("pack", "nointro")
+    pack_id = (request.get_json(silent=True) or {}).get("pack", "nointro")
     try:
         result = download_and_extract_pack(pack_id)
         return jsonify(result)
@@ -5282,7 +5164,7 @@ def api_dats_download_pack():
 
 @app.route("/api/dats/download_one", methods=["POST"])
 def api_dats_download_one():
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     pack_id = body.get("pack", "nointro")
     file_name = body.get("file", "").strip()
     if not file_name:
@@ -5324,7 +5206,7 @@ def api_mame_enrich():
     """
     if not STATE.get("results"):
         return jsonify({"error": "Aucun résultat à enrichir — lancez un scan d'abord"})
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     games = body.get("games")
     if not games:
         games = []
@@ -5402,16 +5284,6 @@ def mame_tag_from_version(version: str) -> str:
 # ---------------------------------------------------------------------------
 
 _FRONTEND_MAP_CACHE: Dict[str, Any] = {"t": 0.0, "map": {}}
-
-
-def _parse_mame_ver(s: str) -> Optional[str]:
-    m = re.search(r"(0\.\d{2,4})", s)
-    if not m:
-        m = re.search(r"\bv?(\d{3})\b", s)
-        if m and 100 <= int(m.group(1)) <= 400:
-            return f"0.{int(m.group(1))}"
-        return None
-    return m.group(1)
 
 
 def _parse_retrobat_changelog(text: str) -> Dict[str, str]:
@@ -6055,8 +5927,9 @@ def fetch_mame_versions(limit: int = 60) -> List[Dict[str, Any]]:
             "bin_name": "",
         }
 
-    # Base locale : 0.289 → 0.160 (listxml GitHub fiable sur cette plage)
-    latest = 289
+    # Base locale : MAME_LATEST_KNOWN → 0.160 (listxml GitHub fiable sur cette plage) ;
+    # les versions plus récentes sont ajoutées par l'API GitHub ci-dessous
+    latest = MAME_LATEST_KNOWN
     oldest = 160
     items: List[Dict[str, Any]] = []
     for n in range(latest, max(oldest - 1, latest - limit), -1):
@@ -6853,7 +6726,7 @@ def export_filtered_mame_xml(source: Path, dest: Path, opts: Dict[str, Any]) -> 
 
 @app.route("/api/mame/analyze", methods=["POST"])
 def api_mame_analyze():
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     path = Path((body.get("path") or "").strip())
     try:
         return jsonify(analyze_mame_xml(path))
@@ -6864,7 +6737,7 @@ def api_mame_analyze():
 
 @app.route("/api/mame/export", methods=["POST"])
 def api_mame_export():
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     source = Path((body.get("source") or body.get("path") or "").strip())
     out_name = (body.get("output") or "").strip()
     opts = body.get("options") or body
@@ -6928,7 +6801,7 @@ def api_fbneo_versions():
 @app.route("/api/fbneo/download", methods=["POST"])
 def api_fbneo_download():
     """Télécharge les DAT FBNeo pour une version/build (latest par défaut)."""
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     version_id = (body.get("version_id") or body.get("tag") or body.get("id") or "latest").strip()
     try:
         result = download_fbneo_dat_version(version_id)
@@ -6952,7 +6825,7 @@ def api_mame_versions():
         traceback.print_exc()
         # Dernier recours : liste minimale
         fallback = []
-        for n in range(289, 279, -1):
+        for n in range(MAME_LATEST_KNOWN, MAME_LATEST_KNOWN - 10, -1):
             tag = f"mame{n:04d}"
             fallback.append({
                 "tag": tag,
@@ -6981,7 +6854,7 @@ def api_mame_generate():
     - body.tag / body.version → télécharge *lx.zip officiel (export MAME)
     - body.mame_exe → exécute mame -listxml en local
     """
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     try:
         mame_exe = (body.get("mame_exe") or "").strip()
         if mame_exe:
@@ -7025,7 +6898,7 @@ def api_profiles_get(profile_id: str):
 @app.route("/api/profiles", methods=["POST"])
 def api_profiles_create():
     """Crée un profil. Body: {name, type, root, detect?: true}"""
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     name = (body.get("name") or "").strip() or "Mon RetroBat"
     root = (body.get("root") or "").strip()
     ptype = (body.get("type") or "retrobat").strip().lower()
@@ -7058,7 +6931,7 @@ def api_profiles_create():
 
 @app.route("/api/profiles/<profile_id>", methods=["PUT"])
 def api_profiles_update(profile_id: str):
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     try:
         profile = load_profile(profile_id)
         for key in ("name", "type", "root", "es_systems", "systems"):
@@ -7086,7 +6959,7 @@ def api_profiles_delete(profile_id: str):
 
 @app.route("/api/profiles/detect", methods=["POST"])
 def api_profiles_detect():
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     root = (body.get("root") or "").strip()
     ptype = (body.get("type") or "retrobat").strip()
     if not root:
@@ -7101,7 +6974,7 @@ def api_profiles_detect():
 
 @app.route("/api/profiles/suggest_dat", methods=["POST"])
 def api_profiles_suggest_dat():
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     sid = (body.get("system") or body.get("id") or "").strip()
     if not sid:
         return jsonify({"error": "system manquant"})
@@ -7114,7 +6987,7 @@ def api_profiles_suggest_dat():
 @app.route("/api/profiles/<profile_id>/set_dat", methods=["POST"])
 def api_profiles_set_dat(profile_id: str):
     """Associe un DAT à un système du profil. Body: { system_id, dat }"""
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     system_id = (body.get("system_id") or body.get("system") or "").strip().lower()
     dat = (body.get("dat") or body.get("path") or "").strip()
     if not system_id:
@@ -7210,7 +7083,7 @@ def api_profiles_scan_system(profile_id: str):
     Body: { system_id, max_depth? }
     Réutilise le moteur de scan existant (STATE).
     """
-    body = request.json or {}
+    body = request.get_json(silent=True) or {}
     system_id = (body.get("system_id") or body.get("system") or "").strip().lower()
     try:
         max_depth = int(body.get("max_depth") or 0)
