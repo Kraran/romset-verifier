@@ -203,7 +203,7 @@
   "scan.subdirs_title": "Ta med filer i undermappar (flera skivor, CHD…). Djup 1 eller 2. Av som standard.",
   "scan.depth_title": "Skanningsdjup",
   "scan.deep": "Grundlig kontroll",
-  "scan.deep_title": "Beräknar full CRC för stora filer (annars identifierade via namn + storlek) och packar upp arkiv för att hitta skadade data (mycket långsammare)",
+  "scan.deep_title": "Beräknar om full CRC för stora filer (annars hämtad från cachen eller identifierade via namn + storlek) och packar upp arkiv för att hitta skadade data (mycket långsammare)",
   "detail.rename": "Byt namn",
   "detail.repair": "Reparera",
   "action.repair": "🔧 Reparera urval",
@@ -370,5 +370,10 @@
   "ui.n_systems": "{n} system",
   "ui.n_selected_shown": "{n} markerade · {v} visade",
   "ui.n_selected": "{n} markerade",
-  "ui.api_not_json": "API:et {url} returnerade HTML/text (HTTP {status}) i stället för JSON. Starta om RomSet Verifier (stäng Lancer.bat-fönstret och öppna det igen). Förhandsvisning: {preview}"
+  "ui.api_not_json": "API:et {url} returnerade HTML/text (HTTP {status}) i stället för JSON. Starta om RomSet Verifier (stäng Lancer.bat-fönstret och öppna det igen). Förhandsvisning: {preview}",
+  "tools.hash_cache_title": "🧮 CRC-cache",
+  "tools.hash_cache_desc": "CRC för stora filer som redan lästs sparas och återanvänds så länge filen inte ändras (samma storlek, samma datum). Att tömma cachen tvingar fram omberäkning vid nästa skanning.",
+  "tools.hash_cache_clear": "🗑 Töm cache",
+  "ui.hash_cache_hits": "{n} CRC från cachen",
+  "ui.hash_cache_cleared": "Cache tömd ({n} poster)"
 }

@@ -203,7 +203,7 @@
   "scan.subdirs_title": "Bestanden in submappen meenemen (multi-disc, CHD…). Diepte 1 of 2. Standaard uit.",
   "scan.depth_title": "Scandiepte",
   "scan.deep": "Grondige controle",
-  "scan.deep_title": "Berekent de volledige CRC van grote bestanden (anders herkend op naam + grootte) en pakt archieven uit om beschadigde gegevens te vinden (veel trager)",
+  "scan.deep_title": "Herberekent de volledige CRC van grote bestanden (anders uit de cache gehaald of herkend op naam + grootte) en pakt archieven uit om beschadigde gegevens te vinden (veel trager)",
   "detail.rename": "Hernoemen",
   "detail.repair": "Repareren",
   "action.repair": "🔧 Selectie repareren",
@@ -370,5 +370,10 @@
   "ui.n_systems": "{n} systemen",
   "ui.n_selected_shown": "{n} geselecteerd · {v} getoond",
   "ui.n_selected": "{n} geselecteerd",
-  "ui.api_not_json": "De API {url} gaf HTML/tekst (HTTP {status}) terug in plaats van JSON. Start RomSet Verifier opnieuw (sluit het Lancer.bat-venster en open het opnieuw). Voorbeeld: {preview}"
+  "ui.api_not_json": "De API {url} gaf HTML/tekst (HTTP {status}) terug in plaats van JSON. Start RomSet Verifier opnieuw (sluit het Lancer.bat-venster en open het opnieuw). Voorbeeld: {preview}",
+  "tools.hash_cache_title": "🧮 CRC-cache",
+  "tools.hash_cache_desc": "De CRC's van al gelezen grote bestanden worden onthouden en hergebruikt zolang het bestand niet verandert (zelfde grootte, zelfde datum). De cache legen dwingt herberekening bij de volgende scan.",
+  "tools.hash_cache_clear": "🗑 Cache legen",
+  "ui.hash_cache_hits": "{n} CRC's uit de cache",
+  "ui.hash_cache_cleared": "Cache geleegd ({n} items)"
 }

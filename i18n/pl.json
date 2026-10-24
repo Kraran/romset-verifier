@@ -203,7 +203,7 @@
   "scan.subdirs_title": "Uwzględnij pliki w podfolderach (wiele dysków, CHD…). Głębokość 1 lub 2. Domyślnie wyłączone.",
   "scan.depth_title": "Głębokość skanowania",
   "scan.deep": "Dokładna weryfikacja",
-  "scan.deep_title": "Oblicza pełne CRC dużych plików (w przeciwnym razie rozpoznawanych po nazwie i rozmiarze) i rozpakowuje archiwa, aby wykryć uszkodzone dane (znacznie wolniej)",
+  "scan.deep_title": "Ponownie oblicza pełne CRC dużych plików (w przeciwnym razie pobierane z pamięci podręcznej lub rozpoznawane po nazwie i rozmiarze) i rozpakowuje archiwa, aby wykryć uszkodzone dane (znacznie wolniej)",
   "detail.rename": "Zmień nazwę",
   "detail.repair": "Napraw",
   "action.repair": "🔧 Napraw zaznaczone",
@@ -370,5 +370,10 @@
   "ui.n_systems": "Systemy: {n}",
   "ui.n_selected_shown": "Zaznaczono: {n} · wyświetlono: {v}",
   "ui.n_selected": "Zaznaczono: {n}",
-  "ui.api_not_json": "API {url} zwróciło HTML/tekst (HTTP {status}) zamiast JSON. Uruchom ponownie RomSet Verifier (zamknij okno Lancer.bat i otwórz je ponownie). Podgląd: {preview}"
+  "ui.api_not_json": "API {url} zwróciło HTML/tekst (HTTP {status}) zamiast JSON. Uruchom ponownie RomSet Verifier (zamknij okno Lancer.bat i otwórz je ponownie). Podgląd: {preview}",
+  "tools.hash_cache_title": "🧮 Pamięć podręczna CRC",
+  "tools.hash_cache_desc": "CRC już odczytanych dużych plików są zapamiętywane i używane ponownie, dopóki plik się nie zmieni (ten sam rozmiar, ta sama data). Wyczyszczenie pamięci wymusza ich ponowne obliczenie przy następnym skanie.",
+  "tools.hash_cache_clear": "🗑 Wyczyść pamięć",
+  "ui.hash_cache_hits": "{n} CRC z pamięci podręcznej",
+  "ui.hash_cache_cleared": "Pamięć wyczyszczona ({n} pozycji)"
 }

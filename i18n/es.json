@@ -203,7 +203,7 @@
   "scan.subdirs_title": "Incluir archivos de subcarpetas (multidisco, CHD…). Profundidad 1 o 2. Desactivado por defecto.",
   "scan.depth_title": "Profundidad de escaneo",
   "scan.deep": "Verificación a fondo",
-  "scan.deep_title": "Calcula el CRC completo de los archivos grandes (si no, se reconocen por nombre + tamaño) y descomprime los comprimidos para detectar datos dañados (mucho más lento)",
+  "scan.deep_title": "Recalcula el CRC completo de los archivos grandes (si no, se toma de la caché o se reconocen por nombre + tamaño) y descomprime los comprimidos para detectar datos dañados (mucho más lento)",
   "detail.rename": "Renombrar",
   "detail.repair": "Reparar",
   "action.repair": "🔧 Reparar selección",
@@ -370,5 +370,10 @@
   "ui.n_systems": "{n} sistemas",
   "ui.n_selected_shown": "{n} seleccionado(s) · {v} mostrado(s)",
   "ui.n_selected": "{n} seleccionado(s)",
-  "ui.api_not_json": "La API {url} devolvió HTML/texto (HTTP {status}) en lugar de JSON. Reinicia RomSet Verifier (cierra la ventana de Lancer.bat y vuelve a abrirla). Vista previa: {preview}"
+  "ui.api_not_json": "La API {url} devolvió HTML/texto (HTTP {status}) en lugar de JSON. Reinicia RomSet Verifier (cierra la ventana de Lancer.bat y vuelve a abrirla). Vista previa: {preview}",
+  "tools.hash_cache_title": "🧮 Caché de CRC",
+  "tools.hash_cache_desc": "Los CRC de los archivos grandes ya leídos se guardan y se reutilizan mientras el archivo no cambie (mismo tamaño, misma fecha). Vaciar la caché obliga a recalcularlos en el próximo escaneo.",
+  "tools.hash_cache_clear": "🗑 Vaciar la caché",
+  "ui.hash_cache_hits": "{n} CRC tomados de la caché",
+  "ui.hash_cache_cleared": "Caché vaciada ({n} entradas)"
 }

@@ -203,7 +203,7 @@
   "scan.subdirs_title": "Dateien in Unterordnern einbeziehen (Multi-Disc, CHD…). Tiefe 1 oder 2. Standardmäßig aus.",
   "scan.depth_title": "Scan-Tiefe",
   "scan.deep": "Gründliche Prüfung",
-  "scan.deep_title": "Berechnet die vollständige CRC großer Dateien (sonst über Name + Größe erkannt) und entpackt Archive, um beschädigte Daten zu erkennen (deutlich langsamer)",
+  "scan.deep_title": "Berechnet die vollständige CRC großer Dateien neu (sonst aus dem Cache übernommen oder über Name + Größe erkannt) und entpackt Archive, um beschädigte Daten zu erkennen (deutlich langsamer)",
   "detail.rename": "Umbenennen",
   "detail.repair": "Reparieren",
   "action.repair": "🔧 Auswahl reparieren",
@@ -370,5 +370,10 @@
   "ui.n_systems": "{n} Systeme",
   "ui.n_selected_shown": "{n} ausgewählt · {v} angezeigt",
   "ui.n_selected": "{n} ausgewählt",
-  "ui.api_not_json": "Die API {url} hat HTML/Text (HTTP {status}) statt JSON geliefert. Starte RomSet Verifier neu (Lancer.bat-Fenster schließen und erneut öffnen). Vorschau: {preview}"
+  "ui.api_not_json": "Die API {url} hat HTML/Text (HTTP {status}) statt JSON geliefert. Starte RomSet Verifier neu (Lancer.bat-Fenster schließen und erneut öffnen). Vorschau: {preview}",
+  "tools.hash_cache_title": "🧮 CRC-Cache",
+  "tools.hash_cache_desc": "Die CRCs bereits gelesener großer Dateien werden gespeichert und wiederverwendet, solange sich die Datei nicht ändert (gleiche Größe, gleiches Datum). Das Leeren des Caches erzwingt die Neuberechnung beim nächsten Scan.",
+  "tools.hash_cache_clear": "🗑 Cache leeren",
+  "ui.hash_cache_hits": "{n} CRCs aus dem Cache",
+  "ui.hash_cache_cleared": "Cache geleert ({n} Einträge)"
 }

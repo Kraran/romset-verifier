@@ -203,7 +203,7 @@
   "scan.subdirs_title": "Ta med filer i undermapper (flere disker, CHD…). Dybde 1 eller 2. Av som standard.",
   "scan.depth_title": "Skannedybde",
   "scan.deep": "Grundig kontroll",
-  "scan.deep_title": "Beregner full CRC for store filer (ellers gjenkjent på navn + størrelse) og pakker ut arkiver for å finne skadde data (mye tregere)",
+  "scan.deep_title": "Beregner full CRC for store filer på nytt (ellers hentet fra hurtigbufferen eller gjenkjent på navn + størrelse) og pakker ut arkiver for å finne skadde data (mye tregere)",
   "detail.rename": "Gi nytt navn",
   "detail.repair": "Reparer",
   "action.repair": "🔧 Reparer utvalg",
@@ -370,5 +370,10 @@
   "ui.n_systems": "{n} systemer",
   "ui.n_selected_shown": "{n} valgt · {v} vist",
   "ui.n_selected": "{n} valgt",
-  "ui.api_not_json": "API-et {url} returnerte HTML/tekst (HTTP {status}) i stedet for JSON. Start RomSet Verifier på nytt (lukk Lancer.bat-vinduet og åpne det igjen). Forhåndsvisning: {preview}"
+  "ui.api_not_json": "API-et {url} returnerte HTML/tekst (HTTP {status}) i stedet for JSON. Start RomSet Verifier på nytt (lukk Lancer.bat-vinduet og åpne det igjen). Forhåndsvisning: {preview}",
+  "tools.hash_cache_title": "🧮 CRC-hurtigbuffer",
+  "tools.hash_cache_desc": "CRC-er for store filer som allerede er lest, lagres og gjenbrukes så lenge filen ikke endres (samme størrelse, samme dato). Tømming av hurtigbufferen tvinger ny beregning ved neste skanning.",
+  "tools.hash_cache_clear": "🗑 Tøm hurtigbuffer",
+  "ui.hash_cache_hits": "{n} CRC-er fra hurtigbufferen",
+  "ui.hash_cache_cleared": "Hurtigbuffer tømt ({n} oppføringer)"
 }
