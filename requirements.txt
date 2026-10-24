@@ -1,3 +1,4 @@
 # RomSet Verifier 1.0.0-beta
 flask>=3.0.0
 lxml>=4.9.0
+py7zr>=0.20  # optionnel : lecture des archives .7z
