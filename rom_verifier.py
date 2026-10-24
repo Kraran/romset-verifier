@@ -1199,11 +1199,9 @@ def _scan_one_mame_machine(args: Tuple) -> Dict:
     Produit aussi `components[]` : statut de chaque ROM/CHD attendu.
     args: (machine, zpath_str|None, catalog|None) — catalog évite une 2e ouverture.
     """
-    if len(args) >= 3:
-        machine, zpath_str, catalog = args[0], args[1], args[2]
-    else:
-        machine, zpath_str = args[0], args[1]
-        catalog = None
+    machine, zpath_str = args[0], args[1]
+    catalog = args[2] if len(args) >= 3 else None
+    rom_dir = Path(args[3]) if len(args) >= 4 and args[3] else None
     name = machine["game"]
     desc = machine.get("description") or name
     cloneof = machine.get("cloneof") or ""
@@ -1258,7 +1256,101 @@ def _scan_one_mame_machine(args: Tuple) -> Dict:
         }
         return c
 
+    def _eval_disks(base_dir: Optional[Path]) -> Tuple[List[Dict], List[str], List[str], int]:
+        """Statut de chaque CHD attendu. Retourne (components, manquants, mauvais, trouvés OK)."""
+        comps: List[Dict] = []
+        missing: List[str] = []
+        bad: List[str] = []
+        ok_n = 0
+        for d in disks:
+            dname = d.get("name") or ""
+            sha_e = (d.get("sha1") or "").lower()
+            dstatus = (d.get("status") or "good").lower()
+            optional = bool(d.get("optional"))
+            chd_fn = _chd_filename(dname)
+            if dstatus == "nodump" or not sha_e:
+                comps.append(_comp(
+                    "chd", chd_fn, "nodump" if dstatus == "nodump" else "optional",
+                    sha1_expected=sha_e, message="nodump" if dstatus == "nodump" else "sans SHA1",
+                ))
+                continue
+            found_chd = None
+            if base_dir is not None:
+                candidates = [
+                    base_dir / name / chd_fn,  # convention MAME : <machine>/<disque>.chd
+                    base_dir / chd_fn,
+                    base_dir / _chd_filename(name),
+                ]
+                found_chd = next((c for c in candidates if c.is_file()), None)
+            if not found_chd:
+                if optional:
+                    comps.append(_comp(
+                        "chd", chd_fn, "optional",
+                        sha1_expected=sha_e, message="CHD optionnel absent",
+                    ))
+                else:
+                    comps.append(_comp(
+                        "chd", chd_fn, "missing",
+                        sha1_expected=sha_e, message="CHD absent",
+                    ))
+                    missing.append(dname)
+                continue
+            sha = read_chd_sha1(found_chd)
+            if not sha:
+                comps.append(_comp(
+                    "chd", chd_fn, "bad_crc",
+                    found=str(found_chd), sha1_expected=sha_e,
+                    message="header CHD illisible",
+                ))
+                bad.append(f"{chd_fn} (header)")
+            elif sha != sha_e:
+                comps.append(_comp(
+                    "chd", chd_fn, "bad_crc",
+                    found=str(found_chd), sha1_expected=sha_e, sha1_found=sha,
+                    message="SHA1 incorrect",
+                ))
+                bad.append(f"{chd_fn} (SHA1)")
+            else:
+                comps.append(_comp(
+                    "chd", chd_fn, "ok",
+                    found=str(found_chd), sha1_expected=sha_e, sha1_found=sha,
+                    message="OK",
+                ))
+                ok_n += 1
+        return comps, missing, bad, ok_n
+
     if not zpath_str:
+        # Machine CHD seule (aucune ROM requise) : les CHD peuvent exister sans ZIP
+        if disks and not required:
+            components = []
+            for r in roms:
+                st = "nodump" if r.get("status") == "nodump" else "optional"
+                components.append(_comp(
+                    "rom", r.get("name") or "", st,
+                    crc_expected=r.get("crc") or "", size_expected=r.get("size") or 0,
+                    message="optionnelle" if st == "optional" else "nodump",
+                ))
+            dcomps, dmissing, dbad, dok = _eval_disks(rom_dir)
+            components.extend(dcomps)
+            first_found = next((c["found"] for c in dcomps if c.get("found")), "")
+            if dbad:
+                status, msg = "bad", f"{len(dbad)} mauvais hash : " + ", ".join(dbad[:5])
+            elif dmissing and dok:
+                status, msg = "incomplete", f"{len(dmissing)} CHD manquant(s) : " + ", ".join(dmissing[:5])
+            elif dmissing:
+                status, msg = "missing", "CHD absent"
+            else:
+                status, msg = "good", f"{dok} CHD OK"
+            return {
+                **base,
+                "status": status,
+                "expected": _chd_filename(name) if len(disks) == 1 else name + "/",
+                "found": Path(first_found).name if first_found else "",
+                "path": first_found,
+                "is_zip": False,
+                "message": msg,
+                "components": components,
+            }
         components = []
         for r in roms:
             st = "nodump" if r.get("status") == "nodump" else ("optional" if r.get("optional") else "missing")
@@ -1278,8 +1370,8 @@ def _scan_one_mame_machine(args: Tuple) -> Dict:
         return {
             **base,
             "status": "missing",
-            "expected": name + (".zip" if required or not disks else ""),
-            "message": "CHD/zip absent" if (not required and disks) else "ZIP absent",
+            "expected": name + ".zip",
+            "message": "ZIP absent",
             "components": components,
         }
 
@@ -1496,6 +1588,14 @@ def _scan_one_mame_machine(args: Tuple) -> Dict:
                 bad_roms.append(rname)
             continue
 
+        if optional:
+            # ROM optionnelle (optional="yes") : son absence ne rend pas le set incomplet
+            components.append(_comp(
+                "rom", rname, "optional",
+                crc_expected=crc_s, size_expected=size_e,
+                message="optionnelle absente",
+            ))
+            continue
         components.append(_comp(
             "rom", rname, "missing",
             crc_expected=crc_s, size_expected=size_e,
@@ -1503,54 +1603,10 @@ def _scan_one_mame_machine(args: Tuple) -> Dict:
         ))
         missing_roms.append(rname)
 
-    # CHD
-    chd_missing = []
-    for d in disks:
-        dname = d.get("name") or ""
-        sha_e = (d.get("sha1") or "").lower()
-        dstatus = (d.get("status") or "good").lower()
-        optional = bool(d.get("optional"))
-        if dstatus == "nodump" or not sha_e:
-            components.append(_comp(
-                "chd", _chd_filename(dname), "nodump" if dstatus == "nodump" else "optional",
-                sha1_expected=sha_e, message="nodump" if dstatus == "nodump" else "sans SHA1",
-            ))
-            continue
-        chd_fn = _chd_filename(dname)
-        candidates = [
-            zpath.parent / chd_fn,
-            zpath.parent / name / chd_fn,
-            zpath.parent / _chd_filename(name),
-        ]
-        found_chd = next((c for c in candidates if c.is_file()), None)
-        if not found_chd:
-            components.append(_comp(
-                "chd", _chd_filename(dname), "missing",
-                sha1_expected=sha_e, message="CHD absent",
-            ))
-            chd_missing.append(dname)
-            continue
-        sha = read_chd_sha1(found_chd)
-        if not sha:
-            components.append(_comp(
-                "chd", _chd_filename(dname), "bad_crc",
-                found=str(found_chd), sha1_expected=sha_e,
-                message="header CHD illisible",
-            ))
-            bad_roms.append(f"{_chd_filename(dname)} (header)")
-        elif sha != sha_e:
-            components.append(_comp(
-                "chd", _chd_filename(dname), "bad_crc",
-                found=str(found_chd), sha1_expected=sha_e, sha1_found=sha,
-                message="SHA1 incorrect",
-            ))
-            bad_roms.append(f"{_chd_filename(dname)} (SHA1)")
-        else:
-            components.append(_comp(
-                "chd", _chd_filename(dname), "ok",
-                found=str(found_chd), sha1_expected=sha_e, sha1_found=sha,
-                message="OK",
-            ))
+    # CHD (à côté du ZIP)
+    dcomps, chd_missing, dbad, _dok = _eval_disks(zpath.parent)
+    components.extend(dcomps)
+    bad_roms.extend(dbad)
 
     # Membres ZIP non référencés dans le DAT (catalogue déjà en mémoire)
     required_crcs = {r.get("crc_int") for r in required if r.get("crc_int", -1) >= 0}
@@ -1577,6 +1633,12 @@ def _scan_one_mame_machine(args: Tuple) -> Dict:
     n_rename = sum(1 for c in components if c["status"] == "rename")
     if n_rename:
         parts.append(f"{n_rename} mal nommée(s)")
+    req_name_set = {r.get("name") or "" for r in required}
+    found_required = sum(
+        1 for c in components
+        if c["kind"] == "rom" and c["expected"] in req_name_set
+        and c["status"] in ("ok", "rename", "bad_size")
+    )
 
     if not required and not disks:
         status = "good"
@@ -1616,7 +1678,7 @@ def _scan_one_mame_machine(args: Tuple) -> Dict:
         **base,
         "status": status,
         "message": msg,
-        "crc": f"{found_count}/{len(required)}" if required else "",
+        "crc": f"{found_required}/{len(required)}" if required else "",
         "components": components,
     }
 
@@ -1758,7 +1820,7 @@ def scan_mame_nonmerged(rom_dir: Path, machines: List[Dict], max_depth: int = 0)
         key = (m["game"] or "").lower()
         zpath_str = zips.get(key)
         cat = catalog_by_path.get(zpath_str) if zpath_str else None
-        tasks.append((m, zpath_str, cat))
+        tasks.append((m, zpath_str, cat, str(rom_dir)))
 
     results: List[Dict] = []
     match_workers = max(4, min(_MAX_WORKERS, 32))
@@ -1924,10 +1986,10 @@ def scan_roms(
         rom_dir, size_set, hash_mode, max_depth=max_depth, skip_zips=skip_zips,
     )
 
-    by_crc: Dict[Tuple, Dict] = {}
-    by_crc_only: Dict[int, Dict] = {}  # fallback si taille DAT ≠ fichier
-    by_sha1: Dict[str, Dict] = {}
-    used_ids: set = set()
+    # Index hash → TOUS les fichiers (un même contenu peut exister en plusieurs exemplaires)
+    by_crc: Dict[Tuple, List[Dict]] = {}
+    by_crc_only: Dict[int, List[Dict]] = {}  # fallback si taille DAT ≠ fichier
+    by_sha1: Dict[str, List[Dict]] = {}
 
     for it in inventory:
         if it.get("error") or not it.get("hashes"):
@@ -1937,21 +1999,21 @@ def scan_roms(
         h = it["hashes"]
         crc_i = h.get("crc_int", -1)
         if crc_i is not None and crc_i >= 0:
-            by_crc.setdefault((crc_i, h["size"]), it)
-            # premier fichier pour ce CRC (évite d'écraser un match déjà optimal)
-            by_crc_only.setdefault(crc_i, it)
+            by_crc.setdefault((crc_i, h["size"]), []).append(it)
+            by_crc_only.setdefault(crc_i, []).append(it)
         sha1 = (h.get("sha1") or "").lower()
         if sha1:
-            by_sha1.setdefault(sha1, it)
+            by_sha1.setdefault(sha1, []).append(it)
 
-    def _find_file(g: Dict) -> Optional[Dict]:
+    def _candidates(g: Dict) -> List[Dict]:
+        """Fichiers dont le contenu correspond à l'entrée DAT, du plus sûr au moins sûr."""
+        out: List[Dict] = []
+        sha1 = (g.get("sha1") or "").lower()
         # CHD / mode SHA1 pur
         if g.get("is_disk") or (hash_mode == "sha1" and (g.get("crc_int") is None or int(g.get("crc_int") or -1) < 0)):
-            sha1 = (g.get("sha1") or "").lower()
-            if sha1 and sha1 in by_sha1:
-                return by_sha1[sha1]
+            out.extend(by_sha1.get(sha1, []) if sha1 else [])
             if g.get("is_disk"):
-                return None
+                return out
         # CRC (+ taille), puis CRC seul, puis SHA1
         crc_i = g.get("crc_int")
         if crc_i is None:
@@ -1960,34 +2022,20 @@ def scan_roms(
             except ValueError:
                 crc_i = -1
         if crc_i is not None and crc_i >= 0:
-            hit = by_crc.get((crc_i, g.get("size") or 0))
-            if hit:
-                return hit
-            hit = by_crc_only.get(crc_i)
-            if hit:
-                return hit
-        sha1 = (g.get("sha1") or "").lower()
-        if sha1 and sha1 in by_sha1:
-            return by_sha1[sha1]
-        return None
+            out.extend(by_crc.get((crc_i, g.get("size") or 0), []))
+            out.extend(by_crc_only.get(crc_i, []))
+        if sha1:
+            out.extend(by_sha1.get(sha1, []))
+        seen_c: set = set()
+        uniq = []
+        for it in out:
+            if id(it) not in seen_c:
+                seen_c.add(id(it))
+                uniq.append(it)
+        return uniq
 
-    for g in games_list:
-        it = _find_file(g)
-        if it is None:
-            results.append({
-                "status": "missing", "game": g["game"], "expected": g["rom_name"],
-                "found": "", "path": "", "size": g["size"], "crc": g.get("crc", ""),
-                "md5": g.get("md5", ""), "sha1": g.get("sha1", ""), "is_zip": False,
-                "zip_member": "", "message": "",
-                "description": g.get("description") or "",
-                "cloneof": g.get("cloneof") or "",
-            })
-            continue
-
-        used_ids.add(id(it))
-        h = it["hashes"]
+    def _name_ok(g: Dict, it: Dict) -> bool:
         if it["is_zip"]:
-            expected_zip = g["game"] + ".zip"
             zname = Path(it["path"]).name
             member = it.get("zip_member") or ""
             # softlist : membre = dump_name MAME (ex. c1001_cubeup.bin)
@@ -1995,15 +2043,60 @@ def scan_roms(
                 _names_match(member, g["rom_name"])
                 or _names_match(member, g.get("dump_name") or "")
             )
-            name_ok = _names_match(zname, expected_zip) and member_ok
-        else:
-            found_name = Path(it["found"]).name
-            name_ok = (
-                _names_match(found_name, g["rom_name"])
-                or _names_match(found_name, g.get("dump_name") or "")
-            )
+            return _names_match(zname, g["game"] + ".zip") and member_ok
+        found_name = Path(it["found"]).name
+        return (
+            _names_match(found_name, g["rom_name"])
+            or _names_match(found_name, g.get("dump_name") or "")
+        )
 
-        status = "good" if name_ok else "rename"
+    # Attribution : un fichier ne sert qu'UNE entrée DAT.
+    # Passe 1 : fichiers déjà au bon nom ; passe 2 : contenu identique, nom à corriger.
+    cands_by_g: List[List[Dict]] = [_candidates(g) for g in games_list]
+    assigned: Dict[int, Dict] = {}
+    owner: Dict[int, int] = {}  # id(fichier) → index de l'entrée DAT qui l'utilise
+    candidate_ids: set = set()
+    for gi, cands in enumerate(cands_by_g):
+        candidate_ids.update(id(it) for it in cands)
+        for it in cands:
+            if id(it) not in owner and _name_ok(games_list[gi], it):
+                assigned[gi] = it
+                owner[id(it)] = gi
+                break
+    for gi, cands in enumerate(cands_by_g):
+        if gi in assigned:
+            continue
+        for it in cands:
+            if id(it) not in owner:
+                assigned[gi] = it
+                owner[id(it)] = gi
+                break
+
+    for gi, g in enumerate(games_list):
+        it = assigned.get(gi)
+        if it is None:
+            message = ""
+            cands = cands_by_g[gi]
+            if cands:
+                # Contenu présent mais déjà utilisé par une autre entrée : ne JAMAIS
+                # proposer de le renommer (casserait l'autre jeu) → il faut une copie.
+                other = games_list[owner[id(cands[0])]]["game"] if id(cands[0]) in owner else ""
+                message = f"Même contenu que {cands[0]['found']}"
+                if other and other != g["game"]:
+                    message += f" (déjà utilisé par {other})"
+                message += " : copie nécessaire"
+            results.append({
+                "status": "missing", "game": g["game"], "expected": g["rom_name"],
+                "found": "", "path": "", "size": g["size"], "crc": g.get("crc", ""),
+                "md5": g.get("md5", ""), "sha1": g.get("sha1", ""), "is_zip": False,
+                "zip_member": "", "message": message,
+                "description": g.get("description") or "",
+                "cloneof": g.get("cloneof") or "",
+            })
+            continue
+
+        h = it["hashes"]
+        status = "good" if _name_ok(g, it) else "rename"
         results.append({
             "status": status,
             "game": g["game"],
@@ -2022,7 +2115,7 @@ def scan_roms(
         })
 
     for it in inventory:
-        if id(it) in used_ids:
+        if id(it) in owner:
             continue
         if it.get("error"):
             results.append(_err_row(
@@ -2040,11 +2133,7 @@ def scan_roms(
                 "message": "Taille hors DAT (CRC non calcule)",
             })
             continue
-        sha1 = (h.get("sha1") or "").lower()
-        crc_i = h.get("crc_int", -1)
-        if sha1 and sha1 in by_sha1 and id(by_sha1[sha1]) != id(it):
-            msg = "Doublon (meme contenu)"
-        elif crc_i >= 0 and (crc_i, h.get("size", 0)) in by_crc and id(by_crc[(crc_i, h.get("size", 0))]) != id(it):
+        if id(it) in candidate_ids:
             msg = "Doublon (meme contenu)"
         else:
             msg = "SHA1 inconnu" if hash_mode == "sha1" else "CRC inconnu"
@@ -2341,7 +2430,8 @@ def _row_is_repairable(row: Dict) -> bool:
         return True
     game = (row.get("game") or "").strip()
     path_s = (row.get("path") or "").strip()
-    if game and path_s:
+    if game and path_s and path_s.lower().endswith(".zip"):
+        # ZIP au mauvais nom (jamais pour un fichier loose ni un CHD)
         try:
             if Path(path_s).name.lower() != (game + ".zip").lower():
                 if st in ("good", "rename", "incomplete", "bad"):
@@ -2625,8 +2715,7 @@ def do_repair(row: Dict) -> Tuple[bool, str]:
         crc_i = _rom_crc_int(r)
         if crc_i < 0:
             continue
-        if r.get("optional") and crc_i < 0:
-            continue
+        # les ROM optionnelles présentes sont aussi remises au bon nom
         rr = dict(r)
         rr["crc_int"] = crc_i
         roms_req.append(rr)

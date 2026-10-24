@@ -2635,8 +2635,8 @@ function rowIsRepairable(r) {
     return c.status === 'rename' || c.status === 'extra' || c.status === 'available';
   })) return true;
   if ((r.status === 'missing' || !r.path) && comps.some(function (c) { return c.status === 'available'; })) return true;
-  // ZIP présent mais nom ≠ game.zip
-  if (r.game && r.path) {
+  // ZIP présent mais nom ≠ game.zip (jamais pour un fichier loose ni un CHD)
+  if (r.game && r.path && String(r.path).toLowerCase().endsWith('.zip')) {
     const base = String(r.path).split(/[/\\]/).pop() || '';
     if (base.toLowerCase() !== (r.game + '.zip').toLowerCase() &&
         (r.status === 'good' || r.status === 'incomplete' || r.status === 'bad')) {
