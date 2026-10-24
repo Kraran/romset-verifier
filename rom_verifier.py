@@ -34,6 +34,11 @@ if _local_site.exists():
 from flask import Flask, jsonify, render_template_string, request, send_file
 from lxml import etree
 
+try:  # optionnel : lecture des archives .7z (CRC lus dans l'en-tête, sans décompresser)
+    import py7zr
+except ImportError:  # pragma: no cover - dépend de l'installation
+    py7zr = None
+
 if getattr(sys, "frozen", False):
     # PyInstaller : ressources packagées dans _MEIPASS, données user à côté de l'exe
     BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
@@ -1046,6 +1051,59 @@ def _hash_zip_task(args: Tuple) -> List[Dict]:
     return out
 
 
+# Archives lisibles en mode standard (No-Intro / Redump) ; .zip modifiable, .7z en lecture seule
+_ARCHIVE_EXTS = (".zip", ".7z")
+_7Z_MISSING = "Archive .7z non lue : module py7zr absent (pip install py7zr)"
+_RAR_UNSUPPORTED = "Archive RAR non prise en charge : convertissez-la en .zip ou .7z"
+
+
+def _list_7z(path: Path) -> List[Tuple[str, int, Optional[int]]]:
+    """Membres fichiers d'un .7z : (nom, taille, crc32 de l'en-tête ou None)."""
+    with py7zr.SevenZipFile(str(path), "r") as z:
+        return [
+            (fi.filename, int(fi.uncompressed or 0), fi.crc32)
+            for fi in z.list() if not fi.is_directory
+        ]
+
+
+def _hash_7z_task(args: Tuple) -> List[Dict]:
+    """Worker : .7z — CRC lus dans l'en-tête (pas de décompression), comme pour les ZIP."""
+    path_str, size_set, hash_mode = args
+    fpath = Path(path_str)
+
+    def _row(found, member="", hashes=None, error=None, **extra):
+        return {
+            "path": path_str, "found": found, "is_zip": True, "archive": "7z",
+            "zip_member": member, "hashes": hashes, "error": error, **extra,
+        }
+
+    if py7zr is None:
+        return [_row(fpath.name, error=_7Z_MISSING)]
+    try:
+        members = [m for m in _list_7z(fpath) if m[1] > 0]
+    except Exception as e:
+        return [_row(fpath.name, error=f"7z illisible : {e}")]
+    if not members:
+        return [_row(fpath.name, error="7z vide")]
+    out: List[Dict] = []
+    for name, size, crc in members:
+        label = f"{fpath.name} → {name}"
+        if hash_mode == "sha1":
+            out.append(_row(label, name, error="Vérification SHA-1 dans un .7z non prise en charge"))
+        elif size_set and size not in size_set:
+            out.append(_row(label, name, hashes={
+                "size": size, "crc": "", "crc_int": -1, "md5": "", "sha1": "",
+            }, size_mismatch=True))
+        elif crc is None:
+            out.append(_row(label, name, error="CRC absent de l'en-tête 7z"))
+        else:
+            crc &= 0xFFFFFFFF
+            out.append(_row(label, name, hashes={
+                "size": size, "crc": f"{crc:08x}", "crc_int": crc, "md5": "", "sha1": "",
+            }))
+    return out
+
+
 _SKIP_DIR_NAMES = frozenset({
     ".git", ".svn", "__pycache__", "node_modules",
     "media", "images", "videos", "manuals", "screenshots",
@@ -1099,6 +1157,8 @@ def _collect_files(
 ) -> List[Dict]:
     loose: List[str] = []
     zips: List[str] = []
+    sevens: List[str] = []
+    rars: List[str] = []
     seen = set()
     # .chd toujours inclus
     loose_ext = set(_LOOSE_EXT) | {".chd"}
@@ -1115,6 +1175,11 @@ def _collect_files(
             if suf == ".zip":
                 if not skip_zips:
                     zips.append(path_str)
+            elif suf == ".7z":
+                if not skip_zips:
+                    sevens.append(path_str)
+            elif suf == ".rar":
+                rars.append(path_str)
             elif suf in loose_ext:
                 loose.append(path_str)
             elif size_set:
@@ -1145,6 +1210,19 @@ def _collect_files(
         with ThreadPoolExecutor(max_workers=workers) as ex:
             for batch in ex.map(_hash_zip_task, tasks, chunksize=chunk):
                 inventory.extend(batch)
+
+    if sevens:
+        tasks = [(p, size_set, hash_mode) for p in sevens]
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            for batch in ex.map(_hash_7z_task, tasks, chunksize=4 if len(sevens) > 32 else 1):
+                inventory.extend(batch)
+
+    # RAR : signalé (statut « error », jamais supprimé en masse) plutôt qu'ignoré en silence
+    for p in rars:
+        inventory.append({
+            "path": p, "found": Path(p).name, "is_zip": True, "archive": "rar",
+            "zip_member": "", "hashes": None, "error": _RAR_UNSUPPORTED,
+        })
 
     return inventory
 
@@ -2044,7 +2122,9 @@ def scan_roms(
                 _names_match(member, g["rom_name"])
                 or _names_match(member, g.get("dump_name") or "")
             )
-            return _names_match(zname, g["game"] + ".zip") and member_ok
+            ext = Path(zname).suffix.lower()
+            ext = ext if ext in _ARCHIVE_EXTS else ".zip"  # Jeu.zip ou Jeu.7z
+            return _names_match(zname, g["game"] + ext) and member_ok
         found_name = Path(it["found"]).name
         return (
             _names_match(found_name, g["rom_name"])
@@ -2458,6 +2538,61 @@ def _row_is_repairable(row: Dict) -> bool:
     return False
 
 
+_PLAYLIST_EXTS = (".cue", ".gdi", ".m3u", ".m3u8")
+_PLAYLIST_MAX = 1024 * 1024  # 1 Mio : au-delà ce n'est pas une feuille de pistes
+
+
+def _update_playlist_refs(folder: Path, old_name: str, new_name: str) -> List[str]:
+    """
+    Après le renommage old_name → new_name dans folder, réécrit les .cue / .gdi / .m3u
+    du même dossier qui citent l'ancien nom (FILE "x.bin" BINARY, piste .gdi, ligne .m3u).
+    Seule une référence entière est remplacée (bornée par début de ligne, espace, guillemet
+    ou séparateur de chemin). Copie de l'original dans la corbeille avant écriture.
+    Un .cue conforme au DAT ne cite que les noms du DAT : il n'est donc jamais modifié.
+    Retourne des notes « Jeu.cue mis à jour ».
+    """
+    if not old_name or old_name == new_name:
+        return []
+    pattern = re.compile(
+        r'(?<![^\s"/\\])' + re.escape(old_name) + r'(?![^\s"])',
+        re.IGNORECASE,
+    )
+    notes: List[str] = []
+    try:
+        entries = list(Path(folder).iterdir())
+    except OSError:
+        return notes
+    for pl in entries:
+        try:
+            if pl.suffix.lower() not in _PLAYLIST_EXTS or not pl.is_file():
+                continue
+            if pl.stat().st_size > _PLAYLIST_MAX:
+                continue
+            raw = pl.read_bytes()
+            for codec in ("utf-8", "cp1252", "latin-1"):
+                try:
+                    text = raw.decode(codec)
+                    break
+                except UnicodeDecodeError:
+                    continue
+            new_text, n = pattern.subn(lambda _m: new_name, text)
+            if not n:
+                continue
+            try:
+                data = new_text.encode(codec)
+            except UnicodeEncodeError:
+                notes.append(f"{pl.name} non mis à jour : « {new_name} » impossible à écrire en {codec}")
+                continue
+            move_to_trash(pl, copy=True)
+            tmp = pl.with_name(pl.name + ".rsv_tmp")
+            tmp.write_bytes(data)
+            _safe_replace(tmp, pl)
+            notes.append(f"{pl.name} mis à jour ({n} référence(s))")
+        except Exception as e:  # une feuille illisible ne doit pas faire échouer le renommage
+            notes.append(f"{pl.name} non mis à jour : {e}")
+    return notes
+
+
 def do_rename(row: Dict) -> Tuple[bool, str]:
     """
     Corrige les noms. Mode arcade (MAME/FBNeo) → toujours do_repair.
@@ -2480,9 +2615,11 @@ def do_rename(row: Dict) -> Tuple[bool, str]:
 
     # Autoriser rename si statut rename, ou composants internes à corriger,
     # ou zip mal nommé (expected se termine par .zip / game connu)
+    # Extension de l'archive : Jeu.zip ou Jeu.7z
+    arch_ext = src.suffix.lower() if src.suffix.lower() in _ARCHIVE_EXTS else ".zip"
     zip_name_wrong = False
     if row.get("is_zip") and game:
-        zip_name_wrong = src.name.lower() != (game + ".zip").lower()
+        zip_name_wrong = src.name.lower() != (game + arch_ext).lower()
     elif row.get("is_zip") and expected.lower().endswith(".zip"):
         zip_name_wrong = src.name.lower() != expected.lower()
 
@@ -2508,6 +2645,11 @@ def do_rename(row: Dict) -> Tuple[bool, str]:
                     if Path(member).name != target or member != target:
                         mapping[member] = target
 
+            if mapping and arch_ext == ".7z":
+                return False, (
+                    "Renommage d'un fichier dans un .7z impossible (archive en lecture seule) : "
+                    "renommez-le à la main ou convertissez l'archive en .zip"
+                )
             if mapping:
                 applied = _batch_rename_zip_members(src, mapping)
                 notes.extend(applied)
@@ -2536,7 +2678,7 @@ def do_rename(row: Dict) -> Tuple[bool, str]:
             # Conteneur .zip
             zip_target_name = None
             if game:
-                zip_target_name = game + ".zip"
+                zip_target_name = game + arch_ext
             elif expected.lower().endswith(".zip"):
                 zip_target_name = Path(expected).name
 
@@ -2548,6 +2690,7 @@ def do_rename(row: Dict) -> Tuple[bool, str]:
                 if dst.resolve() != src.resolve():
                     src.rename(dst)
                     notes.append(f"{src.name} → {dst.name}")
+                    notes.extend(_update_playlist_refs(dst.parent, src.name, dst.name))
 
             row["path"] = str(dst)
             if row.get("components") is not None:
@@ -2647,7 +2790,9 @@ def do_rename(row: Dict) -> Tuple[bool, str]:
         row["found"] = dst.name
         row["expected"] = expected or target_name
         row["status"] = "good"
-        return True, f"{src.name} → {dst.name}"
+        # .cue / .gdi / .m3u voisins qui citent l'ancien nom : mis à jour (sinon jeu cassé)
+        refs = _update_playlist_refs(dst.parent, src.name, dst.name)
+        return True, " ; ".join([f"{src.name} → {dst.name}"] + refs)
     except Exception as e:
         return False, str(e)
 
@@ -3206,7 +3351,16 @@ def do_delete(row: Dict) -> Tuple[bool, str]:
     if not src.exists():
         return False, "Déjà absent"
     try:
-        if _row_is_zip_member(row):
+        if _row_is_zip_member(row) and src.suffix.lower() == ".7z":
+            # .7z en lecture seule : on ne retire pas un fichier d'une archive qui en contient d'autres
+            if py7zr is None:
+                return False, _7Z_MISSING
+            if len(_list_7z(src)) > 1:
+                return False, (
+                    f"Impossible de retirer {row['zip_member']} de {src.name} "
+                    "(archive .7z en lecture seule, elle contient d'autres fichiers)"
+                )
+        elif _row_is_zip_member(row):
             member = row["zip_member"]
             with zipfile.ZipFile(str(src), "r") as zf:
                 n_files = sum(1 for i in zf.infolist() if not i.is_dir())

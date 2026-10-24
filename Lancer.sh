@@ -35,6 +35,12 @@ if ! python3 -c "import flask, lxml" 2>/dev/null; then
   fi
 fi
 echo "  [OK] Flask + lxml"
+# Optionnel : lecture des archives .7z
+if ! python3 -c "import py7zr" 2>/dev/null; then
+  echo "  Installation de py7zr (lecture des .7z)…"
+  python3 -m pip install --user py7zr >/dev/null 2>&1 \
+    || echo "  [!] py7zr non installé : les archives .7z ne seront pas lues."
+fi
 echo ""
 echo "  Démarrage — fenêtre application si Chrome / Chromium / Edge / Brave."
 echo "  Fermez la fenêtre, Ctrl+C ou ⏻ Quitter pour arrêter."

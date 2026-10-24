@@ -48,6 +48,13 @@ if errorlevel 1 (
   )
 )
 echo  [OK] Flask + lxml
+REM Optionnel : lecture des archives .7z
+%PY% -c "import py7zr" >nul 2>&1
+if errorlevel 1 (
+  echo  Installation de py7zr ^(lecture des .7z^)...
+  %PY% -m pip install --user py7zr >nul 2>&1
+  if errorlevel 1 echo  [!] py7zr non installe : les archives .7z ne seront pas lues.
+)
 echo.
 echo  Demarrage...
 echo  Fenetre application (sans barre d'adresse) si Edge / Chrome / Brave.

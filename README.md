@@ -12,7 +12,8 @@ Verify, repair and maintain No-Intro / Redump / MAME / FBNeo sets with a dark UI
 
 ## Features
 
-- **No-Intro / Redump** — CRC-32 from ZIP central directory (fast, no full decompress)
+- **No-Intro / Redump** — CRC-32 from ZIP central directory or `.7z` header (fast, no full decompress)
+- **Track sheets** — renaming a file updates the `.cue` / `.gdi` / `.m3u` next to it that reference the old name
 - **MAME / FBNeo (non-merged)** — full ZIP audit, clone/parent, BIOS, driver status
 - **CHD / MAMERedump** — SHA-1 from CHD headers when needed
 - **Repair** — rename internal members, rebuild ZIPs, borrow missing ROMs from other archives
@@ -27,7 +28,7 @@ Verify, repair and maintain No-Intro / Redump / MAME / FBNeo sets with a dark UI
 
 - **Windows 10/11** (primary target) — Linux/macOS should work for the Python server
 - **Python 3.10+**
-- Dependencies: `flask`, `lxml` (see `requirements.txt`)
+- Dependencies: `flask`, `lxml`, optional `py7zr` for `.7z` (see `requirements.txt`)
 - Optional: **Node.js LTS** + npm for Electron shell
 
 ---
@@ -69,6 +70,8 @@ python rom_verifier.py --open
 | MAME sets | **Non-merged only** (one ZIP per game with all ROMs) |
 | Hashes | CRC-32 for standard/arcade ROMs; SHA-1 for CHD / some Redump-style DATs |
 | Merged / split MAME | Not supported |
+| `.7z` archives | Read-only, No-Intro / Redump mode (needs `py7zr`, installed by the launchers): archive can be renamed, not files inside. Arcade sets: `.zip` only |
+| `.rar` archives | Not supported: reported as errors in the scan |
 | Network drives (NAS) | Supported but slower; close Explorer/emulators before repair/rezip |
 | ZIP recompress | Rewrites every `.zip` in the folder (backup recommended on first try) |
 | Security | Server binds to **127.0.0.1** only; requests whose `Host` or `Origin` is not local are refused (protects against DNS rebinding and cross-site requests) |
