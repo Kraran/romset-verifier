@@ -825,9 +825,40 @@ _LOOSE_EXT = frozenset({
 })
 
 
+# Gros fichiers hors archive (ISO, BIN…) : identification rapide par nom + taille.
+# Lire 8 Go d'ISO Xbox 360 sur un NAS pour un CRC prend des minutes par jeu ;
+# si le nom ET la taille correspondent exactement à une entrée du DAT, on la retient
+# sans lire le contenu. La « Vérification approfondie » force le CRC complet.
+QUICK_MATCH_MIN_SIZE = 64 * 1024 * 1024
+QUICK_MATCH_MSG = "Nom + taille conformes (CRC non calculé — cochez Vérification approfondie pour le vérifier)"
+
+
+def _quick_match_index(games_list: List[Dict]) -> Dict[Tuple[str, int], Dict[str, Any]]:
+    """(nom de fichier en minuscules, taille) → hashes DAT, pour les entrées assez grosses."""
+    idx: Dict[Tuple[str, int], Dict[str, Any]] = {}
+    for g in games_list:
+        size = int(g.get("size") or 0)
+        if size < QUICK_MATCH_MIN_SIZE or g.get("is_disk"):
+            continue
+        crc_i = g.get("crc_int", -1)
+        sha1 = (g.get("sha1") or "").lower()
+        if (crc_i is None or crc_i < 0) and not sha1:
+            continue
+        for name in (g.get("rom_name"), g.get("dump_name")):
+            if name:
+                idx.setdefault((Path(name).name.lower(), size), {
+                    "size": size,
+                    "crc": f"{crc_i:08x}" if crc_i is not None and crc_i >= 0 else "",
+                    "crc_int": crc_i if crc_i is not None else -1,
+                    "md5": "", "sha1": sha1,
+                })
+    return idx
+
+
 def _hash_loose_task(args: Tuple) -> Dict:
-    """Worker : hash un fichier loose selon hash_mode."""
-    path_str, size_set, hash_mode = args
+    """Worker : hash un fichier loose selon hash_mode (quick_index : voir QUICK_MATCH_MIN_SIZE)."""
+    path_str, size_set, hash_mode = args[:3]
+    quick_index = args[3] if len(args) > 3 else None
     fpath = Path(path_str)
     try:
         size = fpath.stat().st_size
@@ -836,6 +867,14 @@ def _hash_loose_task(args: Tuple) -> Dict:
             "path": path_str, "found": fpath.name, "is_zip": False,
             "zip_member": "", "hashes": None, "error": str(e),
         }
+
+    if quick_index and size >= QUICK_MATCH_MIN_SIZE:
+        hit = quick_index.get((fpath.name.lower(), size))
+        if hit:
+            return {
+                "path": path_str, "found": fpath.name, "is_zip": False,
+                "zip_member": "", "hashes": dict(hit), "error": None, "quick": True,
+            }
 
     # CHD : SHA1 header instantané (MAME / MAMERedump)
     if fpath.suffix.lower() == ".chd":
@@ -1136,6 +1175,7 @@ def _collect_files(
     max_depth: int = 0,
     skip_zips: bool = False,
     deep: bool = False,
+    games_list: Optional[List[Dict]] = None,
 ) -> List[Dict]:
     loose: List[str] = []
     zips: List[str] = []
@@ -1179,7 +1219,8 @@ def _collect_files(
     workers = max(4, min(_MAX_WORKERS, max(len(loose) + len(zips), 1)))
 
     if loose:
-        tasks = [(p, size_set, hash_mode) for p in loose]
+        quick_index = None if deep else _quick_match_index(games_list or [])
+        tasks = [(p, size_set, hash_mode, quick_index) for p in loose]
         # chunksize adaptatif : petits lots si peu de fichiers
         chunk = 8 if len(loose) > 64 else max(1, len(loose) // max(workers, 1) or 1)
         with ThreadPoolExecutor(max_workers=workers) as ex:
@@ -2063,6 +2104,7 @@ def scan_roms(
     results: List[Dict] = []
     inventory = _collect_files(
         rom_dir, size_set, hash_mode, max_depth=max_depth, skip_zips=skip_zips, deep=deep,
+        games_list=games_list,
     )
 
     # Index hash → TOUS les fichiers (un même contenu peut exister en plusieurs exemplaires)
@@ -2190,7 +2232,8 @@ def scan_roms(
             "sha1": h.get("sha1", ""),
             "is_zip": it["is_zip"],
             "zip_member": it.get("zip_member") or "",
-            "message": "",
+            "message": QUICK_MATCH_MSG if it.get("quick") else "",
+            "quick": bool(it.get("quick")),
             "description": g.get("description") or "",
             "cloneof": g.get("cloneof") or "",
         })

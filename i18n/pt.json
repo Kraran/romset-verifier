@@ -203,7 +203,7 @@
   "scan.subdirs_title": "Incluir ficheiros em subpastas (multidisco, CHD…). Profundidade 1 ou 2. Desativado por predefinição.",
   "scan.depth_title": "Profundidade da análise",
   "scan.deep": "Verificação aprofundada",
-  "scan.deep_title": "Descomprime cada ficheiro dos arquivos para detetar dados corrompidos (muito mais lento)",
+  "scan.deep_title": "Calcula o CRC completo dos ficheiros grandes (caso contrário, reconhecidos por nome + tamanho) e descomprime os arquivos para detetar dados corrompidos (muito mais lento)",
   "detail.rename": "Renomear",
   "detail.repair": "Reparar",
   "action.repair": "🔧 Reparar seleção",

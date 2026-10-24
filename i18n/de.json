@@ -203,7 +203,7 @@
   "scan.subdirs_title": "Dateien in Unterordnern einbeziehen (Multi-Disc, CHD…). Tiefe 1 oder 2. Standardmäßig aus.",
   "scan.depth_title": "Scan-Tiefe",
   "scan.deep": "Gründliche Prüfung",
-  "scan.deep_title": "Entpackt jede Datei in Archiven, um beschädigte Daten zu erkennen (deutlich langsamer)",
+  "scan.deep_title": "Berechnet die vollständige CRC großer Dateien (sonst über Name + Größe erkannt) und entpackt Archive, um beschädigte Daten zu erkennen (deutlich langsamer)",
   "detail.rename": "Umbenennen",
   "detail.repair": "Reparieren",
   "action.repair": "🔧 Auswahl reparieren",

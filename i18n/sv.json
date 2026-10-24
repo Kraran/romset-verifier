@@ -203,7 +203,7 @@
   "scan.subdirs_title": "Ta med filer i undermappar (flera skivor, CHD…). Djup 1 eller 2. Av som standard.",
   "scan.depth_title": "Skanningsdjup",
   "scan.deep": "Grundlig kontroll",
-  "scan.deep_title": "Packar upp varje fil i arkiven för att hitta skadade data (mycket långsammare)",
+  "scan.deep_title": "Beräknar full CRC för stora filer (annars identifierade via namn + storlek) och packar upp arkiv för att hitta skadade data (mycket långsammare)",
   "detail.rename": "Byt namn",
   "detail.repair": "Reparera",
   "action.repair": "🔧 Reparera urval",

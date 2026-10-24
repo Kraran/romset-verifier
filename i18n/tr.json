@@ -203,7 +203,7 @@
   "scan.subdirs_title": "Alt klasörlerdeki dosyaları dahil et (çok diskli, CHD…). Derinlik 1 veya 2. Varsayılan olarak kapalı.",
   "scan.depth_title": "Tarama derinliği",
   "scan.deep": "Derin doğrulama",
-  "scan.deep_title": "Bozuk verileri bulmak için arşivlerdeki her dosyayı açar (çok daha yavaş)",
+  "scan.deep_title": "Büyük dosyaların tam CRC'sini hesaplar (aksi hâlde ad + boyuta göre tanınır) ve bozuk verileri bulmak için arşivleri açar (çok daha yavaş)",
   "detail.rename": "Yeniden adlandır",
   "detail.repair": "Onar",
   "action.repair": "🔧 Seçimi onar",

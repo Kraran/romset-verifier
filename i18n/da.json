@@ -203,7 +203,7 @@
   "scan.subdirs_title": "Medtag filer i undermapper (flere diske, CHD…). Dybde 1 eller 2. Fra som standard.",
   "scan.depth_title": "Scanningsdybde",
   "scan.deep": "Grundig kontrol",
-  "scan.deep_title": "Udpakker hver fil i arkiverne for at finde beskadigede data (meget langsommere)",
+  "scan.deep_title": "Beregner fuld CRC for store filer (ellers genkendt på navn + størrelse) og udpakker arkiver for at finde beskadigede data (meget langsommere)",
   "detail.rename": "Omdøb",
   "detail.repair": "Reparer",
   "action.repair": "🔧 Reparer markering",
