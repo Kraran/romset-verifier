@@ -203,7 +203,7 @@
   "scan.subdirs_title": "Inclure les fichiers dans les sous-dossiers (multi-disques, CHD…). Profondeur 1 ou 2. Désactivé par défaut.",
   "scan.depth_title": "Profondeur de parcours",
   "scan.deep": "Vérification approfondie",
-  "scan.deep_title": "Calcule le CRC complet des gros fichiers (sinon reconnus par nom + taille) et décompresse les archives pour détecter les données corrompues (beaucoup plus lent)",
+  "scan.deep_title": "Recalcule le CRC complet des gros fichiers (sinon repris du cache ou reconnus par nom + taille) et décompresse les archives pour détecter les données corrompues (beaucoup plus lent)",
   "detail.rename": "Renommer",
   "detail.repair": "Réparer",
   "action.repair": "🔧 Réparer sélection",
@@ -370,5 +370,10 @@
   "ui.n_systems": "{n} systèmes",
   "ui.n_selected_shown": "{n} sélectionné(s) · {v} affiché(s)",
   "ui.n_selected": "{n} sélectionné(s)",
-  "ui.api_not_json": "L'API {url} a renvoyé du HTML/texte (HTTP {status}) au lieu de JSON. Relancez RomSet Verifier (fermez la fenêtre Lancer.bat puis rouvrez-la). Aperçu : {preview}"
+  "ui.api_not_json": "L'API {url} a renvoyé du HTML/texte (HTTP {status}) au lieu de JSON. Relancez RomSet Verifier (fermez la fenêtre Lancer.bat puis rouvrez-la). Aperçu : {preview}",
+  "tools.hash_cache_title": "🧮 Cache des CRC",
+  "tools.hash_cache_desc": "Les CRC des gros fichiers déjà lus sont mémorisés et réutilisés tant que le fichier n'a pas changé (même taille, même date). Vider le cache force leur recalcul au prochain scan.",
+  "tools.hash_cache_clear": "🗑 Vider le cache",
+  "ui.hash_cache_hits": "{n} CRC repris du cache",
+  "ui.hash_cache_cleared": "Cache vidé ({n} entrées)"
 }

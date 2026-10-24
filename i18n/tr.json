@@ -203,7 +203,7 @@
   "scan.subdirs_title": "Alt klasörlerdeki dosyaları dahil et (çok diskli, CHD…). Derinlik 1 veya 2. Varsayılan olarak kapalı.",
   "scan.depth_title": "Tarama derinliği",
   "scan.deep": "Derin doğrulama",
-  "scan.deep_title": "Büyük dosyaların tam CRC'sini hesaplar (aksi hâlde ad + boyuta göre tanınır) ve bozuk verileri bulmak için arşivleri açar (çok daha yavaş)",
+  "scan.deep_title": "Büyük dosyaların tam CRC'sini yeniden hesaplar (aksi hâlde önbellekten alınır veya ad + boyuta göre tanınır) ve bozuk verileri bulmak için arşivleri açar (çok daha yavaş)",
   "detail.rename": "Yeniden adlandır",
   "detail.repair": "Onar",
   "action.repair": "🔧 Seçimi onar",
@@ -370,5 +370,10 @@
   "ui.n_systems": "{n} sistem",
   "ui.n_selected_shown": "{n} seçili · {v} gösteriliyor",
   "ui.n_selected": "{n} seçili",
-  "ui.api_not_json": "{url} API'si JSON yerine HTML/metin döndürdü (HTTP {status}). RomSet Verifier'ı yeniden başlatın (Lancer.bat penceresini kapatıp yeniden açın). Önizleme: {preview}"
+  "ui.api_not_json": "{url} API'si JSON yerine HTML/metin döndürdü (HTTP {status}). RomSet Verifier'ı yeniden başlatın (Lancer.bat penceresini kapatıp yeniden açın). Önizleme: {preview}",
+  "tools.hash_cache_title": "🧮 CRC önbelleği",
+  "tools.hash_cache_desc": "Daha önce okunan büyük dosyaların CRC'leri saklanır ve dosya değişmediği sürece (aynı boyut, aynı tarih) yeniden kullanılır. Önbelleği temizlemek bir sonraki taramada yeniden hesaplamayı zorunlu kılar.",
+  "tools.hash_cache_clear": "🗑 Önbelleği temizle",
+  "ui.hash_cache_hits": "Önbellekten {n} CRC",
+  "ui.hash_cache_cleared": "Önbellek temizlendi ({n} kayıt)"
 }

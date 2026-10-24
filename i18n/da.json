@@ -203,7 +203,7 @@
   "scan.subdirs_title": "Medtag filer i undermapper (flere diske, CHD…). Dybde 1 eller 2. Fra som standard.",
   "scan.depth_title": "Scanningsdybde",
   "scan.deep": "Grundig kontrol",
-  "scan.deep_title": "Beregner fuld CRC for store filer (ellers genkendt på navn + størrelse) og udpakker arkiver for at finde beskadigede data (meget langsommere)",
+  "scan.deep_title": "Genberegner fuld CRC for store filer (ellers hentet fra cachen eller genkendt på navn + størrelse) og udpakker arkiver for at finde beskadigede data (meget langsommere)",
   "detail.rename": "Omdøb",
   "detail.repair": "Reparer",
   "action.repair": "🔧 Reparer markering",
@@ -370,5 +370,10 @@
   "ui.n_systems": "{n} systemer",
   "ui.n_selected_shown": "{n} valgt · {v} vist",
   "ui.n_selected": "{n} valgt",
-  "ui.api_not_json": "API'et {url} returnerede HTML/tekst (HTTP {status}) i stedet for JSON. Genstart RomSet Verifier (luk Lancer.bat-vinduet og åbn det igen). Forhåndsvisning: {preview}"
+  "ui.api_not_json": "API'et {url} returnerede HTML/tekst (HTTP {status}) i stedet for JSON. Genstart RomSet Verifier (luk Lancer.bat-vinduet og åbn det igen). Forhåndsvisning: {preview}",
+  "tools.hash_cache_title": "🧮 CRC-cache",
+  "tools.hash_cache_desc": "CRC'er for store filer, der allerede er læst, gemmes og genbruges, så længe filen ikke ændres (samme størrelse, samme dato). Tømning af cachen tvinger genberegning ved næste scan.",
+  "tools.hash_cache_clear": "🗑 Tøm cache",
+  "ui.hash_cache_hits": "{n} CRC'er fra cachen",
+  "ui.hash_cache_cleared": "Cache tømt ({n} poster)"
 }

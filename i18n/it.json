@@ -203,7 +203,7 @@
   "scan.subdirs_title": "Includi i file nelle sottocartelle (multi-disco, CHD…). Profondità 1 o 2. Disattivato per impostazione predefinita.",
   "scan.depth_title": "Profondità di scansione",
   "scan.deep": "Verifica approfondita",
-  "scan.deep_title": "Calcola il CRC completo dei file grandi (altrimenti riconosciuti per nome + dimensione) e decomprime gli archivi per rilevare dati danneggiati (molto più lento)",
+  "scan.deep_title": "Ricalcola il CRC completo dei file grandi (altrimenti preso dalla cache o riconosciuti per nome + dimensione) e decomprime gli archivi per rilevare dati danneggiati (molto più lento)",
   "detail.rename": "Rinomina",
   "detail.repair": "Ripara",
   "action.repair": "🔧 Ripara selezione",
@@ -370,5 +370,10 @@
   "ui.n_systems": "{n} sistemi",
   "ui.n_selected_shown": "{n} selezionato/i · {v} visualizzato/i",
   "ui.n_selected": "{n} selezionato/i",
-  "ui.api_not_json": "L'API {url} ha restituito HTML/testo (HTTP {status}) invece di JSON. Riavvia RomSet Verifier (chiudi la finestra di Lancer.bat e riaprila). Anteprima: {preview}"
+  "ui.api_not_json": "L'API {url} ha restituito HTML/testo (HTTP {status}) invece di JSON. Riavvia RomSet Verifier (chiudi la finestra di Lancer.bat e riaprila). Anteprima: {preview}",
+  "tools.hash_cache_title": "🧮 Cache dei CRC",
+  "tools.hash_cache_desc": "I CRC dei file grandi già letti vengono memorizzati e riutilizzati finché il file non cambia (stessa dimensione, stessa data). Svuotare la cache ne forza il ricalcolo alla prossima scansione.",
+  "tools.hash_cache_clear": "🗑 Svuota la cache",
+  "ui.hash_cache_hits": "{n} CRC dalla cache",
+  "ui.hash_cache_cleared": "Cache svuotata ({n} voci)"
 }

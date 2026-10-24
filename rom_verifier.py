@@ -855,18 +855,148 @@ def _quick_match_index(games_list: List[Dict]) -> Dict[Tuple[str, int], Dict[str
     return idx
 
 
+# Cache des empreintes calculées (fichiers hors archive) : un CRC / SHA-1 lu une fois
+# n'est plus recalculé tant que le fichier garde la même taille et la même date de
+# modification. Il prime sur l'identification par nom + taille (c'est une vraie empreinte).
+# La « Vérification approfondie » ignore le cache et le met à jour.
+HASH_CACHE_FILE = CACHE_DIR / "hash_cache.json"
+HASH_CACHE_MIN_SIZE = 1024 * 1024        # les petits fichiers se relisent vite
+HASH_CACHE_MAX_AGE = 180 * 24 * 3600     # entrée oubliée si le fichier n'a pas été revu
+
+
+class _HashCache:
+    def __init__(self, file: Path):
+        self.file = Path(file)
+        self.lock = threading.Lock()
+        self.save_lock = threading.Lock()
+        self.data: Dict[str, Dict[str, Any]] = {}
+        self.loaded = False
+        self.dirty = False
+        self.hits = 0
+        self.last_save = time.time()
+
+    @staticmethod
+    def _key(path) -> str:
+        return os.path.normcase(os.path.abspath(str(path)))
+
+    def load(self) -> None:
+        with self.lock:
+            if self.loaded:
+                return
+            self.loaded = True
+            try:
+                raw = json.loads(self.file.read_text(encoding="utf-8"))
+                if isinstance(raw, dict) and isinstance(raw.get("entries"), dict):
+                    self.data = {k: v for k, v in raw["entries"].items() if isinstance(v, dict)}
+            except (OSError, ValueError):
+                self.data = {}
+
+    def get(self, path, st: os.stat_result, hash_mode: str) -> Optional[Dict[str, Any]]:
+        """Empreintes en cache si le fichier n'a pas changé (taille + date), sinon None."""
+        with self.lock:
+            e = self.data.get(self._key(path))
+            if not e or e.get("size") != st.st_size or e.get("mtime") != st.st_mtime_ns:
+                return None
+            crc, sha1 = str(e.get("crc") or ""), str(e.get("sha1") or "")
+            if (crc if hash_mode != "sha1" else sha1) == "":
+                return None  # l'empreinte demandée n'a pas encore été calculée
+            try:
+                crc_int = int(crc, 16) if crc else -1
+            except ValueError:  # fichier de cache abîmé : on recalcule
+                return None
+            e["seen"] = int(time.time())
+            self.dirty = True
+            self.hits += 1
+        return {
+            "size": st.st_size, "crc": crc, "crc_int": crc_int,
+            "md5": "", "sha1": sha1,
+        }
+
+    def put(self, path, st: os.stat_result, crc: str = "", sha1: str = "") -> None:
+        key = self._key(path)
+        with self.lock:
+            e = self.data.get(key)
+            if not e or e.get("size") != st.st_size or e.get("mtime") != st.st_mtime_ns:
+                e = {"size": st.st_size, "mtime": st.st_mtime_ns, "crc": "", "sha1": ""}
+            if crc:
+                e["crc"] = crc
+            if sha1:
+                e["sha1"] = sha1
+            e["seen"] = int(time.time())
+            self.data[key] = e
+            self.dirty = True
+            due = time.time() - self.last_save > 30
+        if due:  # un long scan de gros ISO interrompu ne perd pas tout
+            self.save()
+
+    def move(self, src, dst) -> None:
+        """Après un renommage par l'application : l'empreinte suit le fichier."""
+        with self.lock:
+            e = self.data.pop(self._key(src), None)
+            if e is None:
+                return
+            self.data[self._key(dst)] = e
+            self.dirty = True
+        self.save()
+
+    def clear(self) -> None:
+        with self.lock:
+            self.data = {}
+            self.loaded = True
+            self.dirty = True
+        self.save()
+
+    def save(self) -> None:
+        # save_lock d'abord : l'instantané et son écriture restent dans l'ordre
+        with self.save_lock:
+            with self.lock:
+                if not self.dirty or not self.loaded:
+                    return  # jamais chargé : ne pas écraser le fichier par un cache vide
+                limit = time.time() - HASH_CACHE_MAX_AGE
+                self.data = {k: v for k, v in self.data.items() if v.get("seen", 0) >= limit}
+                payload = json.dumps({"version": 1, "entries": self.data}, separators=(",", ":"))
+                self.dirty = False
+                self.last_save = time.time()
+            try:
+                self.file.parent.mkdir(parents=True, exist_ok=True)
+                tmp = self.file.with_name(self.file.name + ".tmp")
+                tmp.write_text(payload, encoding="utf-8")
+                _safe_replace(tmp, self.file)
+            except OSError as e:
+                print(f"[hash-cache] écriture impossible : {e}")
+
+
+HASH_CACHE = _HashCache(HASH_CACHE_FILE)
+
+
 def _hash_loose_task(args: Tuple) -> Dict:
-    """Worker : hash un fichier loose selon hash_mode (quick_index : voir QUICK_MATCH_MIN_SIZE)."""
+    """
+    Worker : hash un fichier loose selon hash_mode.
+    quick_index : voir QUICK_MATCH_MIN_SIZE ; use_cache : voir HASH_CACHE
+    (False en vérification approfondie : on recalcule et on met le cache à jour).
+    """
     path_str, size_set, hash_mode = args[:3]
     quick_index = args[3] if len(args) > 3 else None
+    use_cache = bool(args[4]) if len(args) > 4 else False
     fpath = Path(path_str)
     try:
-        size = fpath.stat().st_size
+        st = fpath.stat()
+        size = st.st_size
     except OSError as e:
         return {
             "path": path_str, "found": fpath.name, "is_zip": False,
             "zip_member": "", "hashes": None, "error": str(e),
         }
+    cacheable = size >= HASH_CACHE_MIN_SIZE
+
+    # (en mode CRC, une taille absente du DAT reste filtrée plus bas, comme sans cache)
+    if use_cache and cacheable and (hash_mode == "sha1" or not size_set or size in size_set):
+        cached = HASH_CACHE.get(fpath, st, hash_mode)
+        if cached:
+            return {
+                "path": path_str, "found": fpath.name, "is_zip": False,
+                "zip_member": "", "hashes": cached, "error": None, "cached": True,
+            }
 
     if quick_index and size >= QUICK_MATCH_MIN_SIZE:
         hit = quick_index.get((fpath.name.lower(), size))
@@ -891,6 +1021,8 @@ def _hash_loose_task(args: Tuple) -> Dict:
         if hash_mode == "sha1":
             try:
                 sha1, size2 = _sha1_path(fpath)
+                if cacheable:
+                    HASH_CACHE.put(fpath, st, sha1=sha1)
                 return {
                     "path": path_str, "found": fpath.name, "is_zip": False,
                     "zip_member": "", "hashes": {
@@ -907,6 +1039,8 @@ def _hash_loose_task(args: Tuple) -> Dict:
     if hash_mode == "sha1":
         try:
             sha1, size2 = _sha1_path(fpath)
+            if cacheable:
+                HASH_CACHE.put(fpath, st, sha1=sha1)
             return {
                 "path": path_str, "found": fpath.name, "is_zip": False,
                 "zip_member": "", "hashes": {
@@ -930,6 +1064,8 @@ def _hash_loose_task(args: Tuple) -> Dict:
         }
     try:
         crc, size2 = _crc32_path(fpath)
+        if cacheable:
+            HASH_CACHE.put(fpath, st, crc=f"{crc:08x}")
         return {
             "path": path_str, "found": fpath.name, "is_zip": False,
             "zip_member": "", "hashes": {
@@ -1220,12 +1356,16 @@ def _collect_files(
 
     if loose:
         quick_index = None if deep else _quick_match_index(games_list or [])
-        tasks = [(p, size_set, hash_mode, quick_index) for p in loose]
+        HASH_CACHE.load()
+        tasks = [(p, size_set, hash_mode, quick_index, not deep) for p in loose]
         # chunksize adaptatif : petits lots si peu de fichiers
         chunk = 8 if len(loose) > 64 else max(1, len(loose) // max(workers, 1) or 1)
-        with ThreadPoolExecutor(max_workers=workers) as ex:
-            for result in ex.map(_hash_loose_task, tasks, chunksize=chunk):
-                inventory.append(result)
+        try:
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                for result in ex.map(_hash_loose_task, tasks, chunksize=chunk):
+                    inventory.append(result)
+        finally:
+            HASH_CACHE.save()  # même si le scan est interrompu : les CRC déjà lus sont gardés
 
     if zips:
         tasks = [(p, size_set, hash_mode, deep) for p in zips]
@@ -2832,6 +2972,7 @@ def do_rename(row: Dict) -> Tuple[bool, str]:
             tmp.rename(dst)
         elif not same:
             src.rename(dst)
+        HASH_CACHE.move(src, dst)
 
         row["path"] = str(dst)
         row["found"] = dst.name
@@ -4159,6 +4300,7 @@ def _api_scan_body(path: Path, body: dict):
         hash_mode = STATE.get("hash_mode") or "crc"
         dat_mode = STATE.get("dat_mode") or "standard"
         # CHD auto-depth appliqué dans scan_roms si max_depth==0
+        HASH_CACHE.hits = 0
         results = scan_roms(
             path,
             STATE["rom_map"],
@@ -4185,10 +4327,20 @@ def _api_scan_body(path: Path, body: dict):
             "counts": _counts(results),
             "max_depth": effective_depth,
             "max_depth_auto": effective_depth != max_depth,
+            "hash_cache_hits": HASH_CACHE.hits,
         })
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)})
+
+@app.route("/api/hash_cache/clear", methods=["POST"])
+@_exclusive(wait=5)
+def api_hash_cache_clear():
+    HASH_CACHE.load()
+    n = len(HASH_CACHE.data)
+    HASH_CACHE.clear()
+    return jsonify({"ok": True, "cleared": n})
+
 
 @app.route("/api/rename", methods=["POST"])
 @_exclusive(wait=5)

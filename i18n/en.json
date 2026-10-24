@@ -203,7 +203,7 @@
   "scan.subdirs_title": "Include files in subfolders (multi-disc, CHD…). Depth 1 or 2. Off by default.",
   "scan.depth_title": "Scan depth",
   "scan.deep": "Deep check",
-  "scan.deep_title": "Compute the full CRC of large files (otherwise matched by name + size) and decompress archives to detect corrupted data (much slower)",
+  "scan.deep_title": "Recompute the full CRC of large files (otherwise taken from the cache or matched by name + size) and decompress archives to detect corrupted data (much slower)",
   "detail.rename": "Rename",
   "detail.repair": "Repair",
   "action.repair": "🔧 Repair selection",
@@ -370,5 +370,10 @@
   "ui.n_systems": "{n} systems",
   "ui.n_selected_shown": "{n} selected · {v} shown",
   "ui.n_selected": "{n} selected",
-  "ui.api_not_json": "API {url} returned HTML/text (HTTP {status}) instead of JSON. Restart RomSet Verifier (close the Lancer.bat window and reopen it). Preview: {preview}"
+  "ui.api_not_json": "API {url} returned HTML/text (HTTP {status}) instead of JSON. Restart RomSet Verifier (close the Lancer.bat window and reopen it). Preview: {preview}",
+  "tools.hash_cache_title": "🧮 CRC cache",
+  "tools.hash_cache_desc": "CRCs of large files already read are remembered and reused as long as the file has not changed (same size, same date). Clearing the cache forces them to be recomputed on the next scan.",
+  "tools.hash_cache_clear": "🗑 Clear cache",
+  "ui.hash_cache_hits": "{n} CRCs from cache",
+  "ui.hash_cache_cleared": "Cache cleared ({n} entries)"
 }
