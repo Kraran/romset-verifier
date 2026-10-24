@@ -1645,8 +1645,13 @@ function esc(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function escAttr(s) {
-  return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+/**
+ * Argument de fonction JS sûr dans un attribut HTML onclick="…" :
+ * littéral JSON (guillemets, antislashs, retours ligne échappés) puis échappement HTML
+ * (le navigateur décode &quot; avant d'exécuter le JS). Ex. : onclick="f(' + jsArg(x) + ')".
+ */
+function jsArg(s) {
+  return esc(JSON.stringify(String(s ?? '')));
 }
 
 function splitFound(r) {
@@ -3948,7 +3953,7 @@ function renderDatsList() {
     const f = it.file || '';
     const isLocal = it.local === '1' || f.indexOf('/') === 0 || /^[A-Za-z]:[\\/]/.test(f);
     const action = isLocal ? 'Charger' : 'Telecharger';
-    return '<div class="modal-item" onclick="downloadOne(\'' + escAttr(it.file) + '\')">' +
+    return '<div class="modal-item" onclick="downloadOne(' + jsArg(it.file) + ')">' +
       '<span class="icon">📄</span><div style="flex:1;min-width:0">' +
       '<div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(it.name) + '</div>' +
       '<div style="font-size:11px;color:var(--text2)">' + esc(it.version || '') + '</div></div>' +
@@ -4003,7 +4008,7 @@ async function loadLocalDats() {
     document.getElementById('datsStatus').textContent = DAT_ITEMS.length + ' DAT locaux';
     const list = document.getElementById('datsList');
     if (!DAT_ITEMS.length) { list.innerHTML = '<div class="modal-item" style="color:var(--text2)">Aucun DAT dans dat/</div>'; return; }
-    list.innerHTML = DAT_ITEMS.map(it => '<div class="modal-item" onclick="pickLocalDat(\'' + escAttr(it.file) + '\')">' +
+    list.innerHTML = DAT_ITEMS.map(it => '<div class="modal-item" onclick="pickLocalDat(' + jsArg(it.file) + ')">' +
       '<span class="icon">📁</span><div style="flex:1;min-width:0">' +
       '<div style="font-weight:500">' + esc(it.name) + '</div>' +
       '<div style="font-size:11px;color:var(--text2)">' + esc(it.version) + '</div></div>' +
@@ -4059,7 +4064,7 @@ async function loadProfilesList() {
     }
     box.innerHTML = PROFILES.map(function (p) {
       const pct = p.total_games ? Math.round(100 * (p.total_good || 0) / p.total_games) : null;
-      return '<div class="prof-card" onclick="openProfile(\'' + esc(p.id).replace(/'/g, '') + '\')">' +
+      return '<div class="prof-card" onclick="openProfile(' + jsArg(p.id) + ')">' +
         '<h3>🎮 ' + esc(p.name) + '</h3>' +
         '<div class="meta">' + esc(p.root || '') + '</div>' +
         '<div class="stats">' +
@@ -4197,12 +4202,12 @@ function renderProfSystems() {
     const datLabel = s.dat_name || (s.dat ? s.dat.split(/[/\\]/).pop() : '—');
     const pathShort = (s.path || '').replace(/^.*[\\/]roms[\\/]/i, 'roms/');
     html += '<tr data-sid="' + esc(s.id) + '">';
-    html += '<td><input type="checkbox" ' + checked + ' onchange="toggleProfSys(\'' + esc(s.id).replace(/'/g, '') + '\', this.checked)"></td>';
+    html += '<td><input type="checkbox" ' + checked + ' onchange="toggleProfSys(' + jsArg(s.id) + ', this.checked)"></td>';
     html += '<td><b>' + esc(s.id) + '</b><div style="font-size:11px;color:var(--text2)">' + esc(name) + '</div></td>';
     html += '<td class="mono" style="font-size:11px" title="' + esc(s.path || '') + '">' + esc(pathShort || s.path || '—') + '</td>';
     const manualMark = s.dat_manual ? ' ✎' : '';
     html += '<td style="font-size:11px" class="prof-dat-cell" title="' + esc(s.dat || '') + ' — ' + esc(t('prof.click_dat') || 'Cliquer pour changer le DAT') + '">' +
-      '<a href="#" class="prof-dat-link dat-st-' + datSt + '" onclick="event.preventDefault();changeDatForSystem(\'' + String(s.id).replace(/\\/g,'\\\\').replace(/'/g, "\\'") + '\')">' +
+      '<a href="#" class="prof-dat-link dat-st-' + datSt + '" onclick="event.preventDefault();changeDatForSystem(' + jsArg(s.id) + ')">' +
       esc(datLabel) + manualMark + '</a></td>';
     if (lc) {
       html += '<td>' + (lc.total || 0) + '</td>';
@@ -4215,8 +4220,8 @@ function renderProfSystems() {
       html += '<td colspan="6" style="color:var(--text2);font-size:11px">—</td>';
     }
     html += '<td style="white-space:nowrap">';
-    html += '<button type="button" class="primary" style="padding:3px 8px;font-size:11px" onclick="scanOneSystem(\'' + esc(s.id).replace(/'/g, '') + '\')">Scan</button> ';
-    html += '<button type="button" style="padding:3px 8px;font-size:11px" onclick="openSystemInScan(\'' + esc(s.id).replace(/'/g, '') + '\')">Ouvrir</button>';
+    html += '<button type="button" class="primary" style="padding:3px 8px;font-size:11px" onclick="scanOneSystem(' + jsArg(s.id) + ')">Scan</button> ';
+    html += '<button type="button" style="padding:3px 8px;font-size:11px" onclick="openSystemInScan(' + jsArg(s.id) + ')">Ouvrir</button>';
     html += '</td></tr>';
   }
   body.innerHTML = html || '<tr><td colspan="11" style="color:var(--text2)">Aucun système</td></tr>';

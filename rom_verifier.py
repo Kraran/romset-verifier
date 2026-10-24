@@ -5993,7 +5993,9 @@ def _resolve_bios_name(flags: Dict[str, Any], bios_set: set, romof_map: Dict[str
 #  Progetto-SNAPS catlist.ini / genre.ini (filtres catégories)
 # ---------------------------------------------------------------------------
 
-PROGETTO_SUPPORT_DIR = Path(__file__).resolve().parent / "dat" / "support" / "CatVer"
+# Dans dat/ à côté de l'application (SCRIPT_DIR), pas dans le dossier temporaire
+# d'un exécutable PyInstaller (_MEIPASS, effacé à la fermeture).
+PROGETTO_SUPPORT_DIR = DEFAULT_DAT_DIR / "support" / "CatVer"
 _PROGETTO_CACHE: Dict[str, Any] = {"genre": None, "catlist": None, "loaded": False}
 
 
