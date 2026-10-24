@@ -202,6 +202,8 @@
   "scan.subdirs": "Subfolders",
   "scan.subdirs_title": "Include files in subfolders (multi-disc, CHD…). Depth 1 or 2. Off by default.",
   "scan.depth_title": "Scan depth",
+  "scan.deep": "Grondige controle",
+  "scan.deep_title": "Pakt elk bestand in archieven uit om beschadigde gegevens te vinden (veel trager)",
   "detail.rename": "Hernoemen",
   "detail.repair": "Repareren",
   "action.repair": "🔧 Selectie repareren",
