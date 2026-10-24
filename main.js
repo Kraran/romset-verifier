@@ -8,15 +8,41 @@ const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
 const http = require('http');
+const net = require('net');
 const fs = require('fs');
 
-const PORT = 8080;
 const HOST = '127.0.0.1';
+const PREFERRED_PORT = 8080;
+let PORT = PREFERRED_PORT; // choisi au démarrage (8080 si libre, sinon un port libre)
 const ROOT = __dirname;
 
 let mainWindow = null;
 let pythonProc = null;
 let serverReady = false;
+let backendExit = null; // { code } quand le backend Python s'est arrêté
+
+/** true si le port est libre sur 127.0.0.1. */
+function isPortFree(port) {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.once('error', () => resolve(false));
+    srv.once('listening', () => srv.close(() => resolve(true)));
+    srv.listen(port, HOST);
+  });
+}
+
+/** 8080 si libre (URL stable), sinon un port libre attribué par le système. */
+async function pickPort() {
+  if (await isPortFree(PREFERRED_PORT)) return PREFERRED_PORT;
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.once('error', reject);
+    srv.listen(0, HOST, () => {
+      const { port } = srv.address();
+      srv.close(() => resolve(port));
+    });
+  });
+}
 
 /**
  * Résout un interpréteur Python 3 utilisable.
@@ -115,18 +141,15 @@ function startPythonBackend() {
     return { ok: false, error: msg };
   }
 
+  // Pas d'ajout au PYTHONPATH : mélanger les site-packages de plusieurs versions
+  // (3.10 / 3.11 / 3.12) fait charger un lxml compilé pour une autre version.
+  // Le dossier utilisateur de la bonne version est déjà dans sys.path.
   const env = {
     ...process.env,
     PYTHONUNBUFFERED: '1',
-    PYTHONPATH: [
-      process.env.PYTHONPATH || '',
-      path.join(require('os').homedir(), '.local', 'lib', 'python3.12', 'site-packages'),
-      path.join(require('os').homedir(), '.local', 'lib', 'python3.11', 'site-packages'),
-      path.join(require('os').homedir(), '.local', 'lib', 'python3.10', 'site-packages'),
-    ].filter(Boolean).join(path.delimiter),
   };
 
-  const args = [...py.args, script];
+  const args = [...py.args, script, '--port', String(PORT)];
   console.log(`Démarrage backend: ${py.label}`);
   console.log(`  → ${py.cmd} ${args.join(' ')}`);
 
@@ -155,27 +178,44 @@ function startPythonBackend() {
   });
   pythonProc.on('exit', (code) => {
     console.log(`Backend Python terminé (code ${code})`);
+    backendExit = { code };
     pythonProc = null;
   });
 
   return { ok: true, python: py.label };
 }
 
+/**
+ * Attend que CE backend réponde : /api/i18n doit renvoyer le JSON de RomSet Verifier
+ * (un autre service sur le même port ne suffit pas). Échoue vite si Python s'arrête.
+ */
 function waitForServer(timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
     const start = Date.now();
+    const retry = (why) => {
+      if (backendExit) {
+        reject(new Error(`Le backend Python s'est arrêté (code ${backendExit.code}).`));
+      } else if (Date.now() - start > timeoutMs) {
+        reject(new Error('Le serveur Python ne répond pas' + (why ? ` (${why})` : '')));
+      } else {
+        setTimeout(tryOnce, 300);
+      }
+    };
     const tryOnce = () => {
-      const req = http.get(`http://${HOST}:${PORT}/`, (res) => {
-        res.resume();
-        resolve();
+      const req = http.get(`http://${HOST}:${PORT}/api/i18n`, (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => { body += c; });
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(body);
+            if (res.statusCode === 200 && data && Array.isArray(data.languages)) return resolve();
+          } catch (_) { /* pas notre serveur */ }
+          retry(`réponse inattendue sur le port ${PORT}`);
+        });
       });
-      req.on('error', () => {
-        if (Date.now() - start > timeoutMs) {
-          reject(new Error('Le serveur Python ne répond pas'));
-        } else {
-          setTimeout(tryOnce, 300);
-        }
-      });
+      req.setTimeout(2000, () => req.destroy());
+      req.on('error', () => retry(''));
     };
     tryOnce();
   });
@@ -258,6 +298,11 @@ if (process.env.ELECTRON_DISABLE_SANDBOX || process.platform === 'linux') {
 }
 
 app.whenReady().then(async () => {
+  try {
+    PORT = await pickPort();
+  } catch (e) {
+    console.error('[port]', e);
+  }
   const started = startPythonBackend();
   if (!started || !started.ok) {
     dialog.showErrorBox(

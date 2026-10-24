@@ -10,24 +10,34 @@ echo  ========================================
 echo.
 
 REM ---- Python ----
+REM On teste chaque candidat en l'EXECUTANT : "where python" trouve aussi le faux
+REM python.exe du Microsoft Store, qui ne fait qu'ouvrir le Store.
+REM Pas de %%errorlevel%% dans un bloc ( ... ) : il y serait evalue trop tot.
 set "PY="
-where python >nul 2>&1
-if %errorlevel%==0 set "PY=python"
+py -3 --version >nul 2>&1 && set "PY=py -3"
+if not defined PY (python --version >nul 2>&1 && set "PY=python")
+if not defined PY (python3 --version >nul 2>&1 && set "PY=python3")
 if not defined PY (
-  where py >nul 2>&1
-  if %errorlevel%==0 set "PY=py -3"
-)
-if not defined PY (
-  echo  [ERREUR] Python introuvable.
-  echo  Installez Python 3 depuis https://www.python.org/downloads/
-  echo  Cochez "Add python.exe to PATH".
+  echo  [ERREUR] Python 3 introuvable.
+  echo  Installez Python 3.10 ou plus recent depuis https://www.python.org/downloads/
+  echo  et cochez "Add python.exe to PATH".
   echo.
   pause
   exit /b 1
 )
 
-echo  [OK] Python trouve
-%PY% -c "import flask,lxml" 2>nul
+%PY% -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>&1
+if errorlevel 1 (
+  echo  [ERREUR] Python 3.10 ou plus recent est requis.
+  %PY% --version
+  echo  Installez une version recente depuis https://www.python.org/downloads/
+  echo.
+  pause
+  exit /b 1
+)
+
+for /f "delims=" %%V in ('%PY% --version 2^>^&1') do echo  [OK] %%V ^(%PY%^)
+%PY% -c "import flask,lxml" >nul 2>&1
 if errorlevel 1 (
   echo  Installation de Flask et lxml...
   %PY% -m pip install --user flask lxml
