@@ -423,5 +423,15 @@
   "dats.st_installed": "Aktuell",
   "dats.st_update": "Uppdatering finns",
   "ui.update": "Uppdatera",
-  "ui.superseded": "{n} äldre version(er) lagd(a) åt sidan"
+  "ui.superseded": "{n} äldre version(er) lagd(a) åt sidan",
+  "dats.import": "Importera…",
+  "dats.import_title": "Installera ett manuellt hämtat .zip-paket eller .dat (t.ex. No-Intros dagliga paket från DAT-o-MATIC)",
+  "dats.import_browse": "Välj ett .zip-paket eller .dat",
+  "dats.importing": "Importerar DAT…",
+  "dats.src_official": "officiell källa {site}",
+  "dats.src_mirror": "GitHub-spegel, senast publicerad {date}",
+  "dats.mirror_stale": "GitHub-spegeln har inte publicerat något sedan {date} ({days} dagar): dessa DAT kan vara inaktuella.",
+  "dats.nointro_official": "För aktuella No-Intro-DAT: hämta det officiella dagliga paketet på DAT-o-MATIC och använd sedan ”Importera…”.",
+  "dats.st_present": "Installerad",
+  "dats.n_errors": "{n} fel"
 }

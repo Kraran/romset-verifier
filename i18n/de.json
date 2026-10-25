@@ -423,5 +423,15 @@
   "dats.st_installed": "Aktuell",
   "dats.st_update": "Update verfügbar",
   "ui.update": "Aktualisieren",
-  "ui.superseded": "{n} ältere Version(en) beiseitegelegt"
+  "ui.superseded": "{n} ältere Version(en) beiseitegelegt",
+  "dats.import": "Importieren…",
+  "dats.import_title": "Ein von Hand geladenes .zip-Paket oder .dat installieren (z. B. No-Intro-Tagespaket von DAT-o-MATIC)",
+  "dats.import_browse": ".zip-Paket oder .dat wählen",
+  "dats.importing": "DATs werden importiert…",
+  "dats.src_official": "offizielle Quelle {site}",
+  "dats.src_mirror": "GitHub-Spiegel, zuletzt veröffentlicht {date}",
+  "dats.mirror_stale": "Der GitHub-Spiegel hat seit {date} ({days} Tagen) nichts veröffentlicht: diese DATs können veraltet sein.",
+  "dats.nointro_official": "Für aktuelle No-Intro-DATs: offizielles Tagespaket bei DAT-o-MATIC laden, dann „Importieren…“.",
+  "dats.st_present": "Installiert",
+  "dats.n_errors": "{n} Fehler"
 }
