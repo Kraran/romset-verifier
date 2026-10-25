@@ -419,5 +419,9 @@
   "kbd.clear": "avmarkera",
   "kbd.key_del": "Del",
   "kbd.key_esc": "Esc",
-  "col.rom_count": "ROMs"
+  "col.rom_count": "ROMs",
+  "dats.st_installed": "Aktuell",
+  "dats.st_update": "Uppdatering finns",
+  "ui.update": "Uppdatera",
+  "ui.superseded": "{n} äldre version(er) lagd(a) åt sidan"
 }

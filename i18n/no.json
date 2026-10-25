@@ -419,5 +419,9 @@
   "kbd.clear": "fjern valg",
   "kbd.key_del": "Del",
   "kbd.key_esc": "Esc",
-  "col.rom_count": "ROMs"
+  "col.rom_count": "ROMs",
+  "dats.st_installed": "Oppdatert",
+  "dats.st_update": "Oppdatering tilgjengelig",
+  "ui.update": "Oppdater",
+  "ui.superseded": "{n} eldre versjon(er) lagt til side"
 }

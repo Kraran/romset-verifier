@@ -419,5 +419,9 @@
   "kbd.clear": "снять выделение",
   "kbd.key_del": "Del",
   "kbd.key_esc": "Esc",
-  "col.rom_count": "ROM"
+  "col.rom_count": "ROM",
+  "dats.st_installed": "Актуален",
+  "dats.st_update": "Есть обновление",
+  "ui.update": "Обновить",
+  "ui.superseded": "Старых версий отложено: {n}"
 }

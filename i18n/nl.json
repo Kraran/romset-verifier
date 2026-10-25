@@ -419,5 +419,9 @@
   "kbd.clear": "deselecteren",
   "kbd.key_del": "Del",
   "kbd.key_esc": "Esc",
-  "col.rom_count": "ROMs"
+  "col.rom_count": "ROMs",
+  "dats.st_installed": "Actueel",
+  "dats.st_update": "Update beschikbaar",
+  "ui.update": "Bijwerken",
+  "ui.superseded": "{n} oudere versie(s) apart gezet"
 }

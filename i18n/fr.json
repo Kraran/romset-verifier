@@ -419,5 +419,9 @@
   "kbd.clear": "désélectionner",
   "kbd.key_del": "Suppr",
   "kbd.key_esc": "Échap",
-  "col.rom_count": "ROMs"
+  "col.rom_count": "ROMs",
+  "dats.st_installed": "À jour",
+  "dats.st_update": "Mise à jour dispo",
+  "ui.update": "Mettre à jour",
+  "ui.superseded": "{n} ancienne(s) version(s) mise(s) de côté"
 }

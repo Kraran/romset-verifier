@@ -4117,10 +4117,47 @@ def _iter_dat_files() -> List[Path]:
     return out
 
 
+_DAT_SIDE_PREFIXES = ("source code", "non-redump", "unofficial", "non-game", "test")
+_DAT_SIDE_WORDS = ("(private)", "(aftermarket)", "(bios)", "(multiboot)", "(kiosk)", "(demo)", "(update)", "(dlc)")
+
+
+def _dat_system_name(file_name: str) -> str:
+    """« Nintendo - Game Boy (20261020).dat » → « nintendo - game boy » (sans parenthèses ni « Datfile »)."""
+    stem = Path(file_name).stem.lower()
+    stem = re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", stem)
+    stem = re.sub(r"\s*-\s*datfile\b", " ", stem)
+    return " ".join(stem.split()).strip(" -")
+
+
+def _dat_match_score(pattern: str, file_name: str) -> int:
+    """
+    Pertinence d'un DAT pour un motif de système : un segment exactement égal au motif
+    (« game boy ») l'emporte sur un nom qui le contient (« game boy color »), et un mot
+    entier sur une sous-chaîne (« nes » dans « genesis » ne compte pas).
+    """
+    sysname = _dat_system_name(file_name)
+    if not pattern or not sysname:
+        return 0
+    segs = [x.strip() for x in sysname.split(" - ") if x.strip()]
+    if pattern in segs or pattern == sysname or " - ".join(segs[1:]) == pattern:
+        score = 300
+    elif re.search(r"(?<![\w])" + re.escape(pattern) + r"(?![\w])", sysname):
+        best_seg = min((x for x in segs if pattern in x), key=len, default=sysname)
+        extra = max(0, len(best_seg.split()) - len(pattern.split()))
+        score = 150 - 20 * extra
+    else:
+        return 0
+    low = Path(file_name).name.lower()
+    if sysname.startswith(_DAT_SIDE_PREFIXES) or any(w in low for w in _DAT_SIDE_WORDS):
+        score -= 120  # DAT annexe (code source, privé, BIOS…) : seulement à défaut du DAT principal
+    return max(score, 1)
+
+
 def suggest_dat_for_system(system_id: str) -> Dict[str, Any]:
     """
     Propose le meilleur DAT local pour un system id.
     Retourne {path, name, mtime, score, pack}.
+    À pertinence égale, la version la plus récente (date dans le nom, puis du fichier).
     """
     sid = (system_id or "").lower().strip()
     preset = SYSTEM_DAT_PRESETS.get(sid) or {"pack": "", "patterns": [sid]}
@@ -4128,36 +4165,35 @@ def suggest_dat_for_system(system_id: str) -> Dict[str, Any]:
     pack = (preset.get("pack") or "").lower()
 
     best = None
-    best_score = -1
+    best_key: Tuple = (-1,)
     for p in _iter_dat_files():
-        name_l = p.name.lower()
         try:
             rel = p.relative_to(DEFAULT_DAT_DIR)
-            rel_l = str(rel).lower()
+            rel_l = str(rel).lower().replace("\\", "/")
             # anciennes versions téléchargées volontairement (dat/fbneo/versions/…) :
             # sélectionnables à la main, jamais proposées automatiquement
             if rel.parts[:2] == ("fbneo", FBNEO_VERSIONS_DIR):
                 continue
         except ValueError:
-            rel_l = name_l
+            rel_l = p.name.lower()
         score = 0
         for i, pat in enumerate(patterns):
-            if pat and pat in name_l:
-                score += 100 - i * 5
-            elif pat and pat in rel_l:
-                score += 60 - i * 5
-        if pack and pack in rel_l.replace("\\", "/"):
-            score += 25
+            sc = _dat_match_score(pat, p.name)
+            if sc:
+                score = max(score, sc - i * 5)
+            elif pat and re.search(r"(?<![\w])" + re.escape(pat) + r"(?![\w])", str(Path(rel_l).parent)):
+                score = max(score, 60 - i * 5)  # motif dans le nom du dossier seulement
         if score <= 0:
             continue
+        if pack and rel_l.startswith(pack + "/"):
+            score += 25
         try:
             mtime = int(p.stat().st_mtime)
         except OSError:
             mtime = 0
-        # bonus récence
-        score += min(20, mtime // 10_000_000)
-        if score > best_score:
-            best_score = score
+        key = (score,) + _dat_version_key(p)
+        if key > best_key:
+            best_key = key
             best = {
                 "path": str(p),
                 "name": p.name,
@@ -5388,18 +5424,175 @@ def _http_get(url: str, timeout: int = 120) -> bytes:
         return resp.read()
 
 
+_DOWNLOAD_LOCKS: Dict[str, threading.Lock] = {}
+_DOWNLOAD_LOCKS_GUARD = threading.Lock()
+
+
+def _download_lock(dest: Path) -> threading.Lock:
+    """Un seul téléchargement à la fois vers un même fichier (deux clics = un seul .part)."""
+    key = os.path.normcase(os.path.abspath(str(dest)))
+    with _DOWNLOAD_LOCKS_GUARD:
+        return _DOWNLOAD_LOCKS.setdefault(key, threading.Lock())
+
+
 def _http_download(url: str, dest: Path, timeout: int = 600) -> None:
-    """Télécharge un fichier volumineux vers dest (écriture atomique)."""
+    """
+    Télécharge un fichier volumineux vers dest (écriture atomique).
+    Un transfert coupé (taille ≠ Content-Length) ou un .zip illisible ne remplace
+    jamais le fichier existant : le .part est supprimé et une erreur est levée.
+    """
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=timeout) as resp, open(tmp, "wb") as out:
-        while True:
-            chunk = resp.read(1024 * 1024)
-            if not chunk:
-                break
-            out.write(chunk)
-    tmp.replace(dest)
+    with _download_lock(dest):
+        req = urllib.request.Request(url, headers={"User-Agent": UA})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp, open(tmp, "wb") as out:
+                expected = resp.headers.get("Content-Length")
+                got = 0
+                while True:
+                    chunk = resp.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    got += len(chunk)
+            if expected and expected.isdigit() and int(expected) != got:
+                raise IOError(f"Téléchargement incomplet ({got} / {expected} octets) : {url}")
+            if dest.suffix.lower() == ".zip" and not zipfile.is_zipfile(tmp):
+                raise IOError(f"Archive téléchargée illisible : {url}")
+            _safe_replace(tmp, dest)
+        except BaseException:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            raise
+
+
+# --- Versions de DAT -------------------------------------------------------------
+# No-Intro : « Système (20261020-084512).dat » ; Redump : « Système - Datfile (4210)
+# (2026-10-20 08-45-12).dat » ; MAMERedump : « Système (668).dat ». Une mise à jour
+# arrive sous un AUTRE nom : sans nettoyage, l'ancien et le nouveau DAT coexistaient
+# et la suggestion automatique pouvait garder l'ancien.
+_DAT_NUM_GROUP_RE = re.compile(r"\s*\((?=[^)]*\d)[\d\s:._-]+\)")
+SUPERSEDED_DATS_SUBDIR = "superseded_dats"  # dans CACHE_DIR
+
+
+def _dat_family(name: str) -> str:
+    """Nom du DAT sans ses groupes numériques (date de build, nombre d'entrées)."""
+    p = Path(name)
+    stem = _DAT_NUM_GROUP_RE.sub("", p.stem).strip()
+    return (stem + p.suffix).lower()
+
+
+def _dat_version_key(path: Path) -> Tuple[str, float]:
+    """Clé de tri des versions d'un même DAT : date du nom (AAAAMMJJhhmmss), puis date du fichier."""
+    dates = [re.sub(r"\D", "", g) for g in re.findall(r"\(([\d\s:._-]+)\)", Path(path).stem)]
+    dates = [d for d in dates if len(d) >= 8]
+    try:
+        mtime = Path(path).stat().st_mtime
+    except OSError:
+        mtime = 0.0
+    return (max(dates) if dates else "", mtime)
+
+
+def _supersede_old_dats(new_files: List[Path]) -> Dict[str, str]:
+    """
+    Pour chaque DAT qui vient d'être écrit, met de côté (cache/superseded_dats/) les
+    autres versions du même DAT dans le même dossier. Retourne {ancien chemin: nouveau}.
+    Rien n'est supprimé : un ancien DAT reste récupérable dans le cache.
+    """
+    written = {os.path.normcase(str(Path(f).resolve())) for f in new_files}
+    moved: Dict[str, str] = {}
+    for new in new_files:
+        new = Path(new)
+        fam = _dat_family(new.name)
+        try:
+            siblings = list(new.parent.iterdir())
+        except OSError:
+            continue
+        for old in siblings:
+            if not old.is_file() or old.suffix.lower() not in (".dat", ".xml"):
+                continue
+            if os.path.normcase(str(old.resolve())) in written or _dat_family(old.name) != fam:
+                continue
+            if _dat_version_key(old) > _dat_version_key(new):
+                continue  # jamais remplacer un DAT plus récent par un plus ancien
+            try:
+                keep = CACHE_DIR / SUPERSEDED_DATS_SUBDIR
+                keep.mkdir(parents=True, exist_ok=True)
+                os.replace(str(old), str(keep / old.name))
+                moved[str(old)] = str(new)
+            except OSError as e:
+                print(f"[dats] ancienne version non déplacée ({old.name}) : {e}")
+    if moved:
+        _retarget_profiles(moved)
+    return moved
+
+
+def _retarget_profiles(moved: Dict[str, str]) -> int:
+    """Profils qui pointaient vers un DAT remplacé : pointent vers la nouvelle version."""
+    norm = {os.path.normcase(os.path.abspath(k)): v for k, v in moved.items()}
+    changed = 0
+    for pf in _list_profile_files():
+        try:
+            data = json.loads(pf.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        hit = False
+        for sys_ in data.get("systems") or []:
+            cur = sys_.get("dat") or ""
+            new = norm.get(os.path.normcase(os.path.abspath(cur))) if cur else None
+            if new:
+                sys_["dat"] = new
+                sys_["dat_name"] = Path(new).name
+                hit = True
+        if hit:
+            try:
+                tmp = pf.with_name(pf.name + ".tmp")
+                tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                _safe_replace(tmp, pf)
+                changed += 1
+            except (OSError, RuntimeError) as e:
+                print(f"[dats] profil non mis à jour ({pf.name}) : {e}")
+    return changed
+
+
+def _local_dat_status(target: Path, file_name: str) -> str:
+    """
+    « installed » si ce DAT (ou une version au moins aussi récente) est présent,
+    « update » si seule une version plus ancienne l'est, sinon ''.
+    """
+    if (target / file_name).is_file():
+        return "installed"
+    fam = _dat_family(file_name)
+    wanted = _dat_version_key(target / file_name)[0]
+    status = ""
+    try:
+        for p in target.iterdir():
+            if p.is_file() and _dat_family(p.name) == fam:
+                local = _dat_version_key(p)[0]
+                if wanted and local and local >= wanted:
+                    return "installed"
+                status = "update"
+    except OSError:
+        pass
+    return status
+
+
+def _extract_member(zf: zipfile.ZipFile, member: str, dest: Path) -> None:
+    """Extrait un membre via un .part : un DAT existant n'est remplacé qu'une fois l'écriture finie."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    part = dest.with_name(dest.name + ".part")
+    try:
+        with zf.open(member) as src, open(part, "wb") as out:
+            shutil.copyfileobj(src, out, 1024 * 1024)
+        _safe_replace(part, dest)
+    except BaseException:
+        try:
+            part.unlink()
+        except OSError:
+            pass
+        raise
 
 
 def fetch_catalog(pack_id: str) -> List[Dict[str, str]]:
@@ -5429,12 +5622,14 @@ def fetch_catalog(pack_id: str) -> List[Dict[str, str]]:
     except etree.XMLSyntaxError:
         root_el = etree.fromstring(b"<root>" + raw + b"</root>")
     items = []
+    target = DEFAULT_DAT_DIR / info["subdir"]
     for df in root_el.findall(".//datfile"):
         name = (df.findtext("name") or "").strip()
         version = (df.findtext("version") or "").strip()
         file_ = (df.findtext("file") or "").strip()
         if name and file_:
-            items.append({"name": name, "version": version, "file": file_})
+            items.append({"name": name, "version": version, "file": file_,
+                          "status": _local_dat_status(target, Path(file_).name)})
     items.sort(key=lambda x: x["name"].lower())
     return items
 
@@ -5481,9 +5676,11 @@ def download_and_extract_pack(pack_id: str) -> Dict[str, Any]:
     target = DEFAULT_DAT_DIR / info["subdir"]
     target.mkdir(parents=True, exist_ok=True)
 
-    _http_download(info["zip"], zip_path)
+    if not _pack_cache_fresh(zip_path):
+        _http_download(info["zip"], zip_path)
 
     kind = info.get("kind", "flat")
+    written: List[Path] = []
     include_prefixes = info.get("include_prefixes")
     keep_structure = info.get("keep_structure", False)
     extracted = 0
@@ -5525,29 +5722,44 @@ def download_and_extract_pack(pack_id: str) -> Dict[str, Any]:
             else:
                 dest = target / base
 
-            if not str(dest.resolve()).startswith(str(target.resolve())):
+            if not _is_within(dest, target):
                 continue
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            with zf.open(name) as src, open(dest, "wb") as out:
-                while True:
-                    chunk = src.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    out.write(chunk)
+            _extract_member(zf, name, dest)
+            written.append(dest)
             extracted += 1
 
+    superseded = _supersede_old_dats(written)
     return {
         "ok": True,
         "pack": pack_id,
         "label": info["label"],
         "extracted": extracted,
+        "superseded": len(superseded),
         "dir": str(target),
         "zip": str(zip_path),
         "zip_size": zip_path.stat().st_size if zip_path.exists() else 0,
     }
 
 
-PACK_CACHE_MAX_AGE = 24 * 3600  # les packs No-Intro / Redump sont reconstruits chaque jour
+PACK_CACHE_MAX_AGE = 24 * 3600  # cache du pack réutilisé au plus 24 h
+
+
+def _pack_cache_fresh(zip_path: Path) -> bool:
+    """Pack en cache récent ET lisible (un .zip abîmé est re-téléchargé)."""
+    try:
+        return (zip_path.is_file() and (time.time() - zip_path.stat().st_mtime) < PACK_CACHE_MAX_AGE
+                and zipfile.is_zipfile(zip_path))
+    except OSError:
+        return False
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    """path est-il dans root (comparaison par composants, pas par préfixe de chaîne) ?"""
+    try:
+        Path(path).resolve().relative_to(Path(root).resolve())
+        return True
+    except ValueError:
+        return False
 
 
 def _find_in_pack(zip_path: Path, file_name: str) -> Optional[str]:
@@ -5576,14 +5788,8 @@ def extract_one_from_pack(pack_id: str, file_name: str) -> Dict[str, Any]:
     zip_path = CACHE_DIR / f"{pack_id}.zip"
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    def _fresh() -> bool:
-        try:
-            return zip_path.is_file() and (time.time() - zip_path.stat().st_mtime) < PACK_CACHE_MAX_AGE
-        except OSError:
-            return False
-
     downloaded = False
-    if not _fresh():
+    if not _pack_cache_fresh(zip_path):
         _http_download(info["zip"], zip_path)
         downloaded = True
     match = _find_in_pack(zip_path, file_name)
@@ -5600,11 +5806,11 @@ def extract_one_from_pack(pack_id: str, file_name: str) -> Dict[str, Any]:
     target.mkdir(parents=True, exist_ok=True)
     base = Path(match).name
     dest = target / base
-    part = dest.with_name(dest.name + ".part")
-    with zipfile.ZipFile(zip_path, "r") as zf, zf.open(match) as src, open(part, "wb") as out:
-        shutil.copyfileobj(src, out, _READ_BUF)
-    _safe_replace(part, dest)
-    return {"ok": True, "path": str(dest), "file": base, "pack": pack_id, "refreshed": downloaded}
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        _extract_member(zf, match, dest)
+    superseded = _supersede_old_dats([dest])
+    return {"ok": True, "path": str(dest), "file": base, "pack": pack_id, "refreshed": downloaded,
+            "superseded": len(superseded)}
 
 
 @app.route("/api/dats/local")
@@ -6359,14 +6565,9 @@ def download_fbneo_dat_version(version_id: str) -> Dict[str, Any]:
                     if "dats" not in segs:
                         continue
             dest = target / base
-            if not str(dest.resolve()).startswith(str(target.resolve())):
+            if not _is_within(dest, target):
                 continue
-            with zf.open(name) as src, open(dest, "wb") as out:
-                while True:
-                    chunk = src.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    out.write(chunk)
+            _extract_member(zf, name, dest)
             extracted += 1
 
     if extracted == 0:
@@ -6484,20 +6685,16 @@ def generate_mame_listxml_from_lx(tag: str) -> Dict[str, Any]:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     zip_path = CACHE_DIR / lx_name
 
-    _http_download(lx_url, zip_path)
+    # Un listxml publié ne change plus : l'archive déjà en cache (et lisible) est réutilisée
+    if not (zip_path.is_file() and zipfile.is_zipfile(zip_path)):
+        _http_download(lx_url, zip_path)
 
     extracted = None
     with zipfile.ZipFile(zip_path, "r") as zf:
         for name in zf.namelist():
             if name.lower().endswith(".xml") or name.lower().endswith(".dat"):
-                base = Path(name).name
-                dest = out_dir / base
-                with zf.open(name) as src, open(dest, "wb") as out:
-                    while True:
-                        chunk = src.read(1024 * 1024)
-                        if not chunk:
-                            break
-                        out.write(chunk)
+                dest = out_dir / Path(name).name
+                _extract_member(zf, name, dest)
                 extracted = str(dest)
                 break
     if not extracted:
