@@ -4345,6 +4345,8 @@ def _json_error(e):
 
 @app.after_request
 def _no_cache(resp):
+    if request.path.startswith("/fonts/"):
+        return resp  # polices : immuables, cache long (voir font_file)
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     resp.headers["Pragma"] = "no-cache"
     return resp
@@ -4381,6 +4383,22 @@ def favicon():
         if p.is_file():
             return send_file(p, mimetype="image/png")
     return ("", 404)
+
+
+_FONT_NAME_RE = re.compile(r"^[a-z0-9-]+\.woff2$")
+
+
+@app.route("/fonts/<name>")
+def font_file(name: str):
+    """Polices embarquées (IBM Plex Sans, Saira Condensed — OFL) : l'interface marche hors ligne."""
+    if not _FONT_NAME_RE.match(name):
+        return ("", 404)
+    p = _asset("fonts", name)
+    if not p.is_file():
+        return ("", 404)
+    resp = send_file(p, mimetype="font/woff2")
+    resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return resp
 
 
 @app.route("/icon-32.png")

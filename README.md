@@ -20,6 +20,7 @@ Verify, repair and maintain No-Intro / Redump / MAME / FBNeo sets with a dark UI
 - **Profiles** — multi-system RetroBat-style collections (`es_systems.cfg`)
 - **DAT hub** — download No-Intro / Redump / MAME / FBNeo packs; generate filtered MAME `listxml`
 - **Tools** — max DEFLATE ZIP recompression (no 7-Zip required)
+- **Interface** — same look as [Gamelist Media Editor](https://github.com/Kraran/gamelist-media-editor): one large results table (status, game, region, file found ZIP → ROM, size, DAT vs file CRC, plain-language detail, per-row actions), completion meter, keyboard shortcuts; fonts and icons embedded (works offline)
 - **i18n** — Français, English, Español, Deutsch, Italiano, Português, Nederlands, Polski, Türkçe, Svenska, Norsk, Dansk, Русский
 
 ---
@@ -97,6 +98,7 @@ romset-verifier/
 ├── package.json        # Optional Electron shell
 ├── main.js / preload.js
 ├── i18n/               # UI translations
+├── fonts/              # Embedded UI fonts (IBM Plex Sans, Saira Condensed — OFL)
 ├── dat/                # Downloaded / generated DAT packs
 ├── roms/               # Default ROMs folder (optional)
 └── profiles/           # Saved collection profiles
@@ -154,3 +156,4 @@ RomSet Verifier does **not** ship ROMs or complete commercial DAT databases. DAT
 - Built for RetroBat / Batocera / Recalbox users
 - DAT ecosystems: [No-Intro](https://no-intro.org), [Redump](http://redump.org), [MAME](https://www.mamedev.org), [FBNeo](https://github.com/finalburnneo/FBNeo)
 - Arcade titles enrichment: [Arcade Database (ADB)](http://adb.arcadeitalia.net)
+- Interface assets: Tabler Icons (MIT), IBM Plex Sans and Saira Condensed (OFL) — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
