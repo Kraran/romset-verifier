@@ -18,6 +18,7 @@ import sys
 import threading
 import time
 import traceback
+from html import unescape as html_unescape
 import unicodedata
 import urllib.error
 import urllib.parse
@@ -347,6 +348,9 @@ def _crc32_path(filepath: Path) -> tuple:
     return state[0] & 0xFFFFFFFF, size
 
 
+_DISC_IMAGE_EXTS = (".cue", ".bin", ".gdi", ".iso", ".img", ".ccd", ".sub", ".mds", ".mdf", ".cdi", ".raw")
+
+
 def _probe_dat_kind(dat_path: Path) -> str:
     """
     Identifie le type de DAT sans tout charger.
@@ -355,11 +359,21 @@ def _probe_dat_kind(dat_path: Path) -> str:
     - arcade : listxml MAME (<mame>) ou machines avec ROMs CRC (set arcade)
     - standard : No-Intro / Redump / MAMERedump (disks SHA1, roms CRC, etc.)
     """
+    # DAT de préservation (Redump, No-Intro) : jamais un set arcade, même avec plusieurs
+    # ROM par jeu (.cue + .bin d'un CD) — sinon un DAT PlayStation passait en « MAME non-merged »
+    try:
+        with open(dat_path, "rb") as fh:
+            head = fh.read(16384).decode("utf-8", errors="replace")
+        if re.search(r"<(author|homepage|url)>[^<]*(redump|no-intro|nointro|dat-o-matic)", head, re.I):
+            return "standard"
+    except OSError:
+        pass
     saw_sourcefile = False
     n_machine = 0
     n_game = 0
     n_rom = 0
     n_disk = 0
+    n_disc_rom = 0  # pistes / images de disque (.cue, .bin, .iso…)
     try:
         for _ev, el in etree.iterparse(
             str(dat_path),
@@ -381,6 +395,8 @@ def _probe_dat_kind(dat_path: Path) -> str:
                 n_game += 1
             elif tag == "rom":
                 n_rom += 1
+                if (el.get("name") or "").lower().endswith(_DISC_IMAGE_EXTS):
+                    n_disc_rom += 1
             elif tag == "disk":
                 n_disk += 1
             # Échantillon suffisant
@@ -392,6 +408,9 @@ def _probe_dat_kind(dat_path: Path) -> str:
     # listxml exporté parfois en datafile mais avec sourcefile + roms CRC
     if saw_sourcefile and n_rom > 0:
         return "arcade"
+    # Jeux sur disque (cue/bin, gdi, iso) : DAT standard, pas un set arcade
+    if n_rom > 0 and n_disc_rom * 2 >= n_rom:
+        return "standard"
     # MAMERedump / CHD sets : beaucoup de disks, peu ou pas de roms
     if n_disk > 0 and n_disk >= n_rom:
         return "standard"
@@ -4126,6 +4145,7 @@ def _dat_system_name(file_name: str) -> str:
     stem = Path(file_name).stem.lower()
     stem = re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", stem)
     stem = re.sub(r"\s*-\s*datfile\b", " ", stem)
+    stem = re.sub(r"\bdatfile\b", " ", stem)
     return " ".join(stem.split()).strip(" -")
 
 
@@ -4148,7 +4168,7 @@ def _dat_match_score(pattern: str, file_name: str) -> int:
     else:
         return 0
     low = Path(file_name).name.lower()
-    if sysname.startswith(_DAT_SIDE_PREFIXES) or any(w in low for w in _DAT_SIDE_WORDS):
+    if sysname.startswith(_DAT_SIDE_PREFIXES) or any(w in low for w in _DAT_SIDE_WORDS) or any("bios" in seg.split() for seg in segs[1:]):
         score -= 120  # DAT annexe (code source, privé, BIOS…) : seulement à défaut du DAT principal
     return max(score, 1)
 
@@ -5309,9 +5329,10 @@ def api_browse():
                         except OSError:
                             pass
                         dirs.append(item)
-                    elif mode in ("dat", "xml"):
+                    elif mode in ("dat", "xml", "pack"):
                         low = entry.name.lower()
-                        if low.endswith(".dat") or low.endswith(".xml"):
+                        exts = (".dat", ".xml", ".zip") if mode == "pack" else (".dat", ".xml")
+                        if low.endswith(exts):
                             item = {
                                 "name": entry.name,
                                 "path": str(Path(p) / entry.name),
@@ -5634,6 +5655,199 @@ def fetch_catalog(pack_id: str) -> List[Dict[str, str]]:
     return items
 
 
+# --- Redump : source officielle (redump.org) ---------------------------------------
+# Redump publie un lien direct par système (/datfile/<code>/) : pas besoin du miroir.
+# Le miroir GitHub ne sert plus que de secours si redump.org ne répond pas.
+REDUMP_BASE = "http://redump.org"
+_REDUMP_CODE_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,30}$")
+_REDUMP_CATALOG_CACHE: Dict[str, Any] = {"t": 0.0, "items": []}
+
+
+def _norm_system_name(name: str) -> str:
+    """« Sony - PlayStation - Datfile (10914) (…) » et « Sony PlayStation » → « sony playstation »."""
+    n = re.sub(r"\([^)]*\)", " ", Path(name).stem if name.lower().endswith((".dat", ".zip")) else name)
+    n = re.sub(r"\bdatfile\b", " ", n.lower())
+    n = re.sub(r"[^\w]+", " ", n)
+    return " ".join(n.split())
+
+
+def fetch_redump_official_catalog(force: bool = False) -> List[Dict[str, str]]:
+    """Systèmes listés sur redump.org/downloads/ (DAT principal + DAT BIOS), cache 1 h."""
+    now = time.time()
+    if not force and _REDUMP_CATALOG_CACHE["items"] and now - float(_REDUMP_CATALOG_CACHE["t"]) < 3600:
+        return [dict(x) for x in _REDUMP_CATALOG_CACHE["items"]]
+    html = _http_get(REDUMP_BASE + "/downloads/", timeout=30).decode("utf-8", errors="replace")
+    items: List[Dict[str, str]] = []
+    for row in re.findall(r"<tr>(.*?)</tr>", html, re.S | re.I):
+        cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S | re.I)
+        if not cells:
+            continue
+        name = re.sub(r"<[^>]+>", "", cells[0]).strip()
+        name = html_unescape(name)
+        for code in re.findall(r'href="/datfile/([a-z0-9-]+)/"', row):
+            bios = code.endswith("-bios")
+            items.append({
+                "name": name + (" (BIOS)" if bios else ""),
+                "version": "redump.org",
+                "file": "redump:" + code,
+                "code": code,
+                "bios": "1" if bios else "",
+            })
+    if not items:
+        raise ValueError("Page redump.org/downloads/ illisible (aucun lien datfile)")
+    items.sort(key=lambda x: x["name"].lower())
+    _REDUMP_CATALOG_CACHE.update({"t": now, "items": items})
+    return [dict(x) for x in items]
+
+
+def _redump_local_status(target: Path, item: Dict[str, str]) -> Tuple[str, str]:
+    """(« installed » | '', nom du DAT local) : redump.org ne donne la version qu'au téléchargement."""
+    want = _norm_system_name(item["name"].replace(" (BIOS)", " BIOS"))
+    try:
+        for p in target.iterdir():
+            if p.is_file() and p.suffix.lower() == ".dat" and _norm_system_name(p.name) == want:
+                return "installed", p.name
+    except OSError:
+        pass
+    return "", ""
+
+
+def _content_disposition_name(header: str) -> str:
+    m = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', header or "", re.I)
+    return Path(urllib.parse.unquote(m.group(1))).name if m else ""
+
+
+def download_redump_official(code: str) -> Dict[str, Any]:
+    """Télécharge le DAT d'un système depuis redump.org et l'installe dans dat/redump/."""
+    if not _REDUMP_CODE_RE.match(code or ""):
+        raise ValueError(f"Code système Redump invalide : {code!r}")
+    url = f"{REDUMP_BASE}/datfile/{code}/"
+    target = DEFAULT_DAT_DIR / DAT_PACKS["redump"]["subdir"]
+    target.mkdir(parents=True, exist_ok=True)
+    cache = CACHE_DIR / "redump_official"
+    cache.mkdir(parents=True, exist_ok=True)
+    tmp = cache / f"{code}.download"
+    with _download_lock(tmp):
+        req = urllib.request.Request(url, headers={"User-Agent": UA})
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp, open(tmp, "wb") as out:
+                fname = _content_disposition_name(resp.headers.get("Content-Disposition", ""))
+                expected = resp.headers.get("Content-Length")
+                got = 0
+                while True:
+                    chunk = resp.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    got += len(chunk)
+            if expected and expected.isdigit() and int(expected) != got:
+                raise IOError(f"Téléchargement incomplet ({got} / {expected} octets) : {url}")
+            if not fname:
+                raise IOError(f"redump.org n'a pas renvoyé de fichier pour « {code} »")
+            written: List[Path] = []
+            if zipfile.is_zipfile(tmp):
+                with zipfile.ZipFile(tmp) as zf:
+                    for name in zf.namelist():
+                        if name.endswith("/") or not name.lower().endswith((".dat", ".xml")):
+                            continue
+                        dest = target / Path(name).name
+                        if dest.is_file() and dest.stat().st_size == zf.getinfo(name).file_size:
+                            written.append(dest)  # même version déjà installée
+                            continue
+                        _extract_member(zf, name, dest)
+                        written.append(dest)
+            elif fname.lower().endswith((".dat", ".xml")):
+                dest = target / fname
+                _safe_replace(tmp, dest)
+                written.append(dest)
+            else:
+                raise IOError(f"Réponse inattendue de redump.org pour « {code} » ({fname})")
+        finally:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+    if not written:
+        raise IOError(f"Aucun DAT dans le fichier renvoyé par redump.org ({fname})")
+    superseded = _supersede_old_dats(written)
+    main = written[0]
+    return {"ok": True, "path": str(main), "file": main.name, "pack": "redump", "source": "redump.org",
+            "superseded": len(superseded)}
+
+
+def download_redump_official_all(include_bios: bool = False) -> Dict[str, Any]:
+    """« Tout télécharger » Redump depuis redump.org : un DAT par système, l'un après l'autre."""
+    items = [it for it in fetch_redump_official_catalog() if include_bios or not it.get("bios")]
+    ok, errors, superseded = 0, [], 0
+    for it in items:
+        try:
+            r = download_redump_official(it["code"])
+            ok += 1
+            superseded += int(r.get("superseded") or 0)
+        except Exception as e:
+            errors.append(f"{it['name']} : {e}")
+        time.sleep(0.2)  # rester courtois avec redump.org
+    target = DEFAULT_DAT_DIR / DAT_PACKS["redump"]["subdir"]
+    return {"ok": ok > 0, "pack": "redump", "label": "Redump (redump.org)", "extracted": ok,
+            "superseded": superseded, "errors": errors[:20], "dir": str(target),
+            **({} if ok else {"error": "Aucun DAT téléchargé : " + "; ".join(errors[:3])})}
+
+
+# --- Import d'un pack téléchargé à la main (No-Intro DAT-o-MATIC…) ---------------------
+
+def import_dat_pack(src: Path, pack_id: str) -> Dict[str, Any]:
+    """
+    Installe les DAT d'un .zip (pack quotidien DAT-o-MATIC, etc.) ou un .dat isolé
+    dans dat/<pack>/, avec le même remplacement des anciennes versions que les téléchargements.
+    """
+    if pack_id not in DAT_PACKS:
+        raise ValueError(f"Pack inconnu : {pack_id}")
+    src = Path(src).expanduser()
+    if not src.is_file():
+        raise FileNotFoundError(f"Fichier introuvable : {src}")
+    target = DEFAULT_DAT_DIR / DAT_PACKS[pack_id]["subdir"]
+    target.mkdir(parents=True, exist_ok=True)
+    written: List[Path] = []
+    low = src.name.lower()
+    if low.endswith((".dat", ".xml")):
+        dest = target / src.name
+        if os.path.normcase(str(src.resolve())) != os.path.normcase(str(dest.resolve())):
+            part = dest.with_name(dest.name + ".part")
+            shutil.copyfile(src, part)
+            _safe_replace(part, dest)
+        written.append(dest)
+    elif zipfile.is_zipfile(src):
+        with zipfile.ZipFile(src) as zf:
+            seen = set()
+            for name in zf.namelist():
+                base = Path(name).name
+                if name.endswith("/") or not base.lower().endswith((".dat", ".xml")) or ".." in Path(name).parts:
+                    continue
+                if base.lower() in seen:
+                    continue  # même nom dans deux sous-dossiers : le premier gagne
+                seen.add(base.lower())
+                dest = target / base
+                _extract_member(zf, name, dest)
+                written.append(dest)
+    else:
+        raise ValueError("Choisissez un .zip de DAT ou un fichier .dat")
+    if not written:
+        raise ValueError("Aucun fichier .dat dans cette archive")
+    superseded = _supersede_old_dats(written)
+    return {"ok": True, "pack": pack_id, "label": DAT_PACKS[pack_id]["label"], "extracted": len(written),
+            "superseded": len(superseded), "dir": str(target)}
+
+
+def _mirror_latest(items: List[Dict[str, str]]) -> str:
+    """Date (AAAA-MM-JJ) du DAT le plus récent publié par le miroir GitHub."""
+    best = ""
+    for it in items:
+        d = re.sub(r"\D", "", it.get("version") or "")[:8]
+        if len(d) == 8 and d > best:
+            best = d
+    return f"{best[:4]}-{best[4:6]}-{best[6:8]}" if best else ""
+
+
 def list_local_dats() -> List[Dict[str, str]]:
     """DAT présents dans dat/ (récursif)."""
     out: List[Dict[str, str]] = []
@@ -5825,13 +6039,30 @@ def api_dats_local():
 def api_dats_catalog():
     pack_id = request.args.get("pack", "nointro")
     try:
-        items = fetch_catalog(pack_id)
+        source, note = "mirror", ""
+        if pack_id == "redump":
+            try:
+                items = fetch_redump_official_catalog()
+                target = DEFAULT_DAT_DIR / DAT_PACKS["redump"]["subdir"]
+                for it in items:
+                    it["status"], it["local"] = _redump_local_status(target, it)
+                source = "official"
+            except Exception as e:  # redump.org injoignable : miroir GitHub
+                note = f"redump.org injoignable ({e}) : miroir GitHub utilisé"
+                items = fetch_catalog(pack_id)
+        else:
+            items = fetch_catalog(pack_id)
+        info = DAT_PACKS.get(pack_id, {})
         return jsonify({
             "ok": True,
             "pack": pack_id,
-            "label": DAT_PACKS.get(pack_id, {}).get("label", pack_id),
+            "label": info.get("label", pack_id),
             "count": len(items),
             "items": items,
+            "source": source,
+            "note": note,
+            # date de la dernière publication du miroir (No-Intro, Redump de secours)
+            "mirror_latest": _mirror_latest(items) if source == "mirror" and info.get("xml") else "",
         })
     except Exception as e:
         traceback.print_exc()
@@ -5842,6 +6073,12 @@ def api_dats_catalog():
 def api_dats_download_pack():
     pack_id = (request.get_json(silent=True) or {}).get("pack", "nointro")
     try:
+        if pack_id == "redump":
+            try:
+                fetch_redump_official_catalog()
+            except Exception:
+                return jsonify(download_and_extract_pack(pack_id))  # secours : miroir GitHub
+            return jsonify(download_redump_official_all())
         result = download_and_extract_pack(pack_id)
         return jsonify(result)
     except Exception as e:
@@ -5860,6 +6097,8 @@ def api_dats_download_one():
         p = Path(file_name)
         if p.is_file() and p.suffix.lower() in (".dat", ".xml"):
             return jsonify({"ok": True, "path": str(p.resolve()), "file": p.name, "pack": pack_id})
+        if file_name.startswith("redump:"):
+            return jsonify(download_redump_official(file_name.split(":", 1)[1]))
         result = extract_one_from_pack(pack_id, file_name)
         return jsonify(result)
     except Exception as e:
@@ -5867,6 +6106,19 @@ def api_dats_download_one():
         return jsonify({"error": str(e)})
 
 
+
+
+@app.route("/api/dats/import", methods=["POST"])
+def api_dats_import():
+    body = request.get_json(silent=True) or {}
+    path = str(body.get("path") or "").strip()
+    if not path:
+        return jsonify({"error": "Choisissez un fichier"})
+    try:
+        return jsonify(import_dat_pack(Path(path), str(body.get("pack") or "nointro")))
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)})
 
 
 @app.route("/api/mame/info")

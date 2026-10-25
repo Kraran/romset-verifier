@@ -423,5 +423,15 @@
   "dats.st_installed": "Up to date",
   "dats.st_update": "Update available",
   "ui.update": "Update",
-  "ui.superseded": "{n} older version(s) set aside"
+  "ui.superseded": "{n} older version(s) set aside",
+  "dats.import": "Import…",
+  "dats.import_title": "Install a .zip pack or .dat downloaded by hand (e.g. No-Intro daily pack from DAT-o-MATIC)",
+  "dats.import_browse": "Choose a .zip pack or a .dat",
+  "dats.importing": "Importing DATs…",
+  "dats.src_official": "official source {site}",
+  "dats.src_mirror": "GitHub mirror, last published {date}",
+  "dats.mirror_stale": "The GitHub mirror has published nothing since {date} ({days} days): these DATs may be out of date.",
+  "dats.nointro_official": "For up-to-date No-Intro DATs: download the official daily pack from DAT-o-MATIC, then use “Import…”.",
+  "dats.st_present": "Installed",
+  "dats.n_errors": "{n} error(s)"
 }

@@ -423,5 +423,15 @@
   "dats.st_installed": "Güncel",
   "dats.st_update": "Güncelleme var",
   "ui.update": "Güncelle",
-  "ui.superseded": "{n} eski sürüm kenara alındı"
+  "ui.superseded": "{n} eski sürüm kenara alındı",
+  "dats.import": "İçe aktar…",
+  "dats.import_title": "Elle indirilen bir .zip paketi veya .dat kur (ör. DAT-o-MATIC'ten günlük No-Intro paketi)",
+  "dats.import_browse": "Bir .zip paketi veya .dat seçin",
+  "dats.importing": "DAT'lar içe aktarılıyor…",
+  "dats.src_official": "resmî kaynak {site}",
+  "dats.src_mirror": "GitHub yansısı, son yayın {date}",
+  "dats.mirror_stale": "GitHub yansısı {date} tarihinden beri ({days} gün) bir şey yayımlamadı: bu DAT'lar eski olabilir.",
+  "dats.nointro_official": "Güncel No-Intro DAT'ları için: DAT-o-MATIC'ten resmî günlük paketi indirin, sonra “İçe aktar…”.",
+  "dats.st_present": "Kurulu",
+  "dats.n_errors": "{n} hata"
 }

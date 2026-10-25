@@ -423,5 +423,15 @@
   "dats.st_installed": "Актуален",
   "dats.st_update": "Есть обновление",
   "ui.update": "Обновить",
-  "ui.superseded": "Старых версий отложено: {n}"
+  "ui.superseded": "Старых версий отложено: {n}",
+  "dats.import": "Импорт…",
+  "dats.import_title": "Установить вручную скачанный пакет .zip или .dat (например, ежедневный пакет No-Intro с DAT-o-MATIC)",
+  "dats.import_browse": "Выберите пакет .zip или .dat",
+  "dats.importing": "Импорт DAT…",
+  "dats.src_official": "официальный источник {site}",
+  "dats.src_mirror": "зеркало GitHub, последняя публикация {date}",
+  "dats.mirror_stale": "Зеркало GitHub ничего не публиковало с {date} ({days} дн.): эти DAT могут быть устаревшими.",
+  "dats.nointro_official": "Для актуальных DAT No-Intro: скачайте официальный ежедневный пакет на DAT-o-MATIC, затем «Импорт…».",
+  "dats.st_present": "Установлен",
+  "dats.n_errors": "Ошибок: {n}"
 }

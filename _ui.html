@@ -379,6 +379,13 @@ table.results tr:hover .row-acts, table.results tr.selected .row-acts { opacity:
 .kbd-hints { display: flex; gap: 16px; flex: none; color: var(--text3); }
 .kbd-hints kbd + kbd { margin-left: 2px; }
 @media (max-width: 1100px) { .kbd-hints { display: none; } }
+#datsPanelCatalog > div:first-child { flex-wrap: nowrap !important; }
+#datsPanelCatalog > div:first-child button { height: 30px; padding: 0 10px; font-size: 13px; flex: none; }
+#datsPanelCatalog > div:first-child input { height: 30px; min-width: 90px !important; }
+.dats-note { display: flex; align-items: flex-start; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 13px; line-height: 1.45; color: var(--text2); background: var(--bg2); }
+.dats-note.warn { color: var(--amber); background: var(--amber-soft); }
+.dats-note .icon { margin-top: 2px; }
+.dats-note a { color: var(--accent-h); }
 .dat-badge { flex: none; height: 20px; padding: 0 8px; border-radius: 999px; font: 600 11px/20px var(--font); white-space: nowrap; }
 .dat-badge.ok { color: var(--green); background: var(--green-soft); }
 .dat-badge.upd { color: var(--amber); background: var(--amber-soft); }
@@ -980,6 +987,7 @@ body.arcade-mode th.arcade-only, body.arcade-mode td.arcade-only { display: tabl
 <symbol id="i-device-floppy" viewBox="0 0 24 24"><path d="M6 4h10l4 4v10a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2" /> <path d="M10 14a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /> <path d="M14 4l0 4l-6 0l0 -4" /></symbol>
 <symbol id="i-player-stop" viewBox="0 0 24 24"><path d="M5 5m0 2a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-10a2 2 0 0 1-2-2z"/></symbol>
 <symbol id="i-copy" viewBox="0 0 24 24"><path d="M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666" /> <path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1" /></symbol>
+<symbol id="i-upload" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2" /> <path d="M7 9l5 -5l5 5" /> <path d="M12 4l0 12" /></symbol>
 </svg>
 <header class="app-bar">
   <h1>
@@ -1271,9 +1279,11 @@ body.arcade-mode th.arcade-only, body.arcade-mode td.arcade-only { display: tabl
         <button type="button" id="pack-mame" onclick="setPack('mame')">MAME</button>
         <button type="button" id="pack-fbneo" onclick="setPack('fbneo')">FBNeo</button>
         <input id="datsSearch" type="search" placeholder="Filtrer…" data-i18n-placeholder="filter.col" style="flex:1;min-width:120px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:6px 10px;font-size:13px">
+        <button type="button" onclick="importDatPack()" title="Installer un pack .zip ou un .dat téléchargé à la main (ex. pack quotidien No-Intro de DAT-o-MATIC)" data-i18n-title="dats.import_title"><svg class="icon"><use href="#i-upload"></use></svg><span data-i18n="dats.import">Importer…</span></button>
         <button type="button" class="primary" onclick="downloadPack()">Tout télécharger</button>
       </div>
       <div class="modal-path" id="datsStatus">Chargement du catalogue…</div>
+      <div class="dats-note" id="datsNote" hidden></div>
       <div class="modal-list" id="datsList"></div>
     </div>
     <div id="datsPanelFbneo" style="display:none;flex-direction:column;min-height:0;flex:1;overflow:hidden">
@@ -3661,7 +3671,7 @@ async function openBrowser(mode) {
   }
 
   BROWSER_MODE = mode || 'roms';
-  if (BROWSER_MODE === 'dat' || BROWSER_MODE === 'xml') {
+  if (BROWSER_MODE === 'dat' || BROWSER_MODE === 'xml' || BROWSER_MODE === 'pack') {
     BROWSER_SORT = { col: 'mtime', dir: 'desc' };
   } else {
     BROWSER_SORT = { col: 'name', dir: 'asc' };
@@ -3671,6 +3681,7 @@ async function openBrowser(mode) {
     dat: t('browser.dat'),
     xml: t('browser.xml'),
     exe: t('browser.exe'),
+    pack: t('dats.import_browse'),
     roms: t('browser.roms')
   };
   const titleEl = document.getElementById('browserTitle');
@@ -3691,6 +3702,8 @@ async function openBrowser(mode) {
       start = (document.getElementById('mameSourceXml') && document.getElementById('mameSourceXml').value || '').trim();
     } else if (BROWSER_MODE === 'exe') {
       start = (document.getElementById('mameExePath') && document.getElementById('mameExePath').value || '').trim();
+    } else if (BROWSER_MODE === 'pack') {
+      start = '~/Downloads';  // le pack vient d'être téléchargé dans le navigateur
     } else if (BROWSER_MODE === 'tools_rezip') {
       start = (document.getElementById('toolsRezipPath') && document.getElementById('toolsRezipPath').value || '').trim();
       if (!start) start = (document.getElementById('romsPath') && document.getElementById('romsPath').value || '').trim();
@@ -3763,7 +3776,7 @@ async function browseTo(path) {
   BROWSER_PARENT = data.parent || null;
   BROWSER_DIRS = data.dirs || [];
   BROWSER_FILES = data.files || [];
-  if (BROWSER_MODE === 'dat' || BROWSER_MODE === 'xml') {
+  if (BROWSER_MODE === 'dat' || BROWSER_MODE === 'xml' || BROWSER_MODE === 'pack') {
     if (!BROWSER_SORT.col) BROWSER_SORT = { col: 'mtime', dir: 'desc' };
   }
   renderBrowserList();
@@ -3837,7 +3850,7 @@ function renderBrowserList() {
   const list = document.getElementById('browserList');
   if (!list) return;
 
-  const showMeta = (BROWSER_MODE === 'dat' || BROWSER_MODE === 'xml' || BROWSER_MODE === 'exe');
+  const showMeta = (BROWSER_MODE === 'dat' || BROWSER_MODE === 'xml' || BROWSER_MODE === 'exe' || BROWSER_MODE === 'pack');
   const parts = [];
 
   if (BROWSER_PARENT) {
@@ -3943,6 +3956,10 @@ function pickFile(path) {
     const sid = window._profDatSystemId;
     window._profDatSystemId = null;
     applyProfileDat(sid, path);
+    return;
+  }
+  if (BROWSER_MODE === 'pack') {
+    runDatImport(path);
     return;
   }
   if (BROWSER_MODE === 'xml') {
@@ -4593,12 +4610,64 @@ async function setPack(pack) {
       document.getElementById('datsStatus').textContent =
         t('ui.no_local_dat_pack', { label: data.label });
     } else {
+      const src = data.source === 'official' ? t('dats.src_official', { site: 'redump.org' })
+        : (data.mirror_latest ? t('dats.src_mirror', { date: data.mirror_latest }) : '');
       document.getElementById('datsStatus').textContent =
-        data.label + ' — ' + (data.count || DAT_ITEMS.length) + ' DAT disponibles';
+        data.label + ' — ' + (data.count || DAT_ITEMS.length) + ' DAT' + (src ? ' · ' + src : '');
     }
+    renderDatsNote(pack, data);
     renderDatsList();
   } catch (e) {
     document.getElementById('datsStatus').textContent = t('ui.error_e', { e: e });
+  }
+}
+
+/** Bandeau sous le catalogue : miroir en retard, repli, conseil d'import No-Intro. */
+function renderDatsNote(pack, data) {
+  const el = document.getElementById('datsNote');
+  if (!el) return;
+  let html = '', warn = false;
+  if (data && data.note) {
+    html = esc(data.note); warn = true;
+  } else if (data && data.mirror_latest) {
+    const age = Math.floor((Date.now() - Date.parse(data.mirror_latest + 'T00:00:00Z')) / 86400000);
+    if (age > 30) {
+      warn = true;
+      html = esc(t('dats.mirror_stale', { date: data.mirror_latest, days: age }));
+    }
+  }
+  if (pack === 'nointro') {
+    html += (html ? '<br>' : '') + esc(t('dats.nointro_official')) +
+      ' <a href="https://datomatic.no-intro.org/" target="_blank" rel="noopener">DAT-o-MATIC</a>';
+  }
+  el.hidden = !html;
+  el.classList.toggle('warn', warn);
+  el.innerHTML = html ? '<svg class="icon"><use href="#i-' + (warn ? 'alert-triangle' : 'info-circle') + '"></use></svg><span>' + html + '</span>' : '';
+}
+
+async function importDatPack() {
+  window._datImportPack = DAT_PACK || 'nointro';
+  openBrowser('pack');
+}
+
+async function runDatImport(path) {
+  const pack = window._datImportPack || DAT_PACK || 'nointro';
+  window._datImportPack = null;
+  showLoading(t('dats.importing'), path);
+  try {
+    const data = await api('/api/dats/import', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: path, pack: pack })
+    });
+    if (data.error) { toast(data.error, false); return; }
+    const msg = t('ui.dats_installed', { n: data.extracted }) + supersededNote(data);
+    toast(msg);
+    const st = document.getElementById('datsStatus');
+    if (st) st.textContent = msg + ' → ' + (data.dir || '');
+    if (document.getElementById('datsModal').classList.contains('open')) await setPack(pack);
+  } catch (e) {
+    toast(String(e), false);
+  } finally {
+    hideLoading();
   }
 }
 
@@ -4616,7 +4685,11 @@ function renderDatsList() {
     // État local d'un DAT du catalogue : à jour, ancienne version présente, absent
     let badge = '';
     let action = isLocal ? t('ui.load') : t('ui.download');
-    if (!isLocal && it.status === 'installed') {
+    if (!isLocal && it.status === 'installed' && it.code) {
+      // redump.org ne donne la version qu'au téléchargement : « Installé » + vérifier
+      badge = '<span class="dat-badge ok">' + esc(t('dats.st_present')) + '</span>';
+      action = t('ui.update');
+    } else if (!isLocal && it.status === 'installed') {
       badge = '<span class="dat-badge ok">' + esc(t('dats.st_installed')) + '</span>';
       action = t('ui.load');
     } else if (!isLocal && it.status === 'update') {
@@ -4627,7 +4700,7 @@ function renderDatsList() {
     return '<div class="modal-item" onclick="' + click + '">' +
       '<svg class="icon"><use href="#i-' + (it._local ? 'folder' : 'file-text') + '"></use></svg><div style="flex:1;min-width:0">' +
       '<div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(it.name) + '</div>' +
-      '<div style="font-size:12px;color:var(--text3)">' + esc(it.version || '') + '</div></div>' +
+      '<div style="font-size:12px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(it.code && it.local ? it.local : (it.version || '')) + '</div></div>' +
       badge + '<span style="font-size:12px;color:var(--accent-h);white-space:nowrap">' + esc(action) + '</span></div>';
   }).join('');
 }
@@ -4653,7 +4726,7 @@ async function downloadOne(file) {
 }
 
 async function downloadPack() {
-  const labels = {nointro:'No-Intro (~100 Mo)', redump:'Redump (~30 Mo)', mameredump:'MAMERedump (repo GitHub, peut etre volumineux)', mame:'MAME DATs (repo GitHub)', fbneo:'FBNeo DATs (repo GitHub)'};
+  const labels = {nointro:'No-Intro (~100 Mo)', redump:'Redump (redump.org, un DAT par système)', mameredump:'MAMERedump (repo GitHub, peut etre volumineux)', mame:'MAME DATs (repo GitHub)', fbneo:'FBNeo DATs (repo GitHub)'};
   const hint = labels[DAT_PACK] || DAT_PACK;
   {
     const ok = await openConfirm(
@@ -4669,7 +4742,8 @@ async function downloadPack() {
   try {
     const data = await api('/api/dats/download_pack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pack: DAT_PACK }) });
     if (data.error) { toast(data.error, false); document.getElementById('datsStatus').textContent = data.error; return; }
-    document.getElementById('datsStatus').textContent = t('ui.pack_extracted', { label: data.label, n: data.extracted, dir: data.dir }) + supersededNote(data);
+    document.getElementById('datsStatus').textContent = t('ui.pack_extracted', { label: data.label, n: data.extracted, dir: data.dir }) + supersededNote(data) +
+      (data.errors && data.errors.length ? ' · ' + t('dats.n_errors', { n: data.errors.length }) : '');
     toast(t('ui.dats_installed', { n: data.extracted }) + supersededNote(data));
     await setPack(DAT_PACK);
   } catch (e) { toast(String(e), false); }

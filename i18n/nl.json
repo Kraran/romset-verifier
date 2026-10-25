@@ -423,5 +423,15 @@
   "dats.st_installed": "Actueel",
   "dats.st_update": "Update beschikbaar",
   "ui.update": "Bijwerken",
-  "ui.superseded": "{n} oudere versie(s) apart gezet"
+  "ui.superseded": "{n} oudere versie(s) apart gezet",
+  "dats.import": "Importeren…",
+  "dats.import_title": "Een handmatig gedownload .zip-pakket of .dat installeren (bv. dagelijks No-Intro-pakket van DAT-o-MATIC)",
+  "dats.import_browse": "Kies een .zip-pakket of .dat",
+  "dats.importing": "DAT's importeren…",
+  "dats.src_official": "officiële bron {site}",
+  "dats.src_mirror": "GitHub-mirror, laatst gepubliceerd {date}",
+  "dats.mirror_stale": "De GitHub-mirror heeft sinds {date} ({days} dagen) niets gepubliceerd: deze DAT's kunnen verouderd zijn.",
+  "dats.nointro_official": "Voor actuele No-Intro-DAT's: download het officiële dagpakket op DAT-o-MATIC en gebruik dan „Importeren…”.",
+  "dats.st_present": "Geïnstalleerd",
+  "dats.n_errors": "{n} fout(en)"
 }
