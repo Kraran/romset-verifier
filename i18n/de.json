@@ -388,5 +388,8 @@
   "prog.elapsed": "{t} vergangen",
   "prog.counts": "{quick} über Name + Größe · {cached} aus dem Cache · {hashed} gelesen",
   "prog.units": "B,KB,MB,GB,TB",
-  "toast.scan_cancelled": "Scan abgebrochen"
+  "toast.scan_cancelled": "Scan abgebrochen",
+  "scan.quick_id": "ISO Name + Größe",
+  "scan.quick_id_title": "Große Dateien (≥ 64 MB: ISO…) werden über Name und Größe erkannt, ohne sie zu lesen (wenige Sekunden für 100 ISOs). Deaktivieren, um die echte CRC zu berechnen (bitgenaue Prüfung, sehr langsam)",
+  "prog.skipped": "{n} große Dateien nicht erkannt (nicht gelesen)"
 }

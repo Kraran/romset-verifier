@@ -388,5 +388,8 @@
   "prog.elapsed": "{t} decorrido",
   "prog.counts": "{quick} por nome + tamanho · {cached} da cache · {hashed} lidos",
   "prog.units": "B,KB,MB,GB,TB",
-  "toast.scan_cancelled": "Análise cancelada"
+  "toast.scan_cancelled": "Análise cancelada",
+  "scan.quick_id": "ISO nome + tamanho",
+  "scan.quick_id_title": "Os ficheiros grandes (≥ 64 MB: ISO…) são identificados pelo nome e tamanho sem serem lidos (alguns segundos para 100 ISO). Desmarque para calcular o CRC real (controlo bit a bit, muito lento)",
+  "prog.skipped": "{n} ficheiros grandes não identificados (não lidos)"
 }

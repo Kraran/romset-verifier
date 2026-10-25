@@ -18,6 +18,7 @@ import sys
 import threading
 import time
 import traceback
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -192,7 +193,7 @@ class _ScanProgress:
         self.done = self.total = 0
         self.bytes_done = self.bytes_total = 0
         self.active: Dict[str, List[Any]] = {}  # chemin → [nom, octets lus, taille]
-        self.counts = {"quick": 0, "cached": 0, "hashed": 0}
+        self.counts = {"quick": 0, "cached": 0, "hashed": 0, "skipped": 0}
 
     def begin(self) -> None:
         with self.lock:
@@ -272,12 +273,37 @@ class _ScanProgress:
 SCAN_PROGRESS = _ScanProgress()
 
 
+# Gros fichiers (contrôle bit-exact) : lus UN PAR UN, en gros blocs, lecture déclarée
+# séquentielle à l'OS. Sur un disque dur ou un NAS, plusieurs lectures de 8 Go en
+# parallèle font chercher la tête en permanence (seek storm) au lieu de streamer.
+# Les petits fichiers restent parallélisés.
+BIG_READ_MIN_SIZE = 64 * 1024 * 1024
+BIG_READ_PARALLEL = 1
+BIG_READ_BUF = 32 * 1024 * 1024
+
+
+def _open_sequential(filepath):
+    """Ouvre en lecture binaire avec l'indication « accès séquentiel » (Windows O_SEQUENTIAL, POSIX fadvise)."""
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_SEQUENTIAL", 0)
+    fd = os.open(str(filepath), flags)
+    if hasattr(os, "posix_fadvise"):
+        try:
+            os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_SEQUENTIAL)
+        except OSError:
+            pass
+    return os.fdopen(fd, "rb", buffering=0)
+
+
 def _read_with_progress(filepath, update) -> int:
     """Lit un fichier par blocs ; update(chunk) ; avancement + annulation du scan. Retourne la taille."""
     key = str(filepath)
     size = 0
-    with open(filepath, "rb", buffering=0) as f:
-        buf = bytearray(_READ_BUF)
+    with _open_sequential(filepath) as f:
+        try:
+            big = os.fstat(f.fileno()).st_size >= BIG_READ_MIN_SIZE
+        except OSError:
+            big = False
+        buf = bytearray(BIG_READ_BUF if big else _READ_BUF)
         view = memoryview(buf)
         while True:
             n = f.readinto(buf)
@@ -952,34 +978,82 @@ _LOOSE_EXT = frozenset({
 })
 
 
-# Gros fichiers hors archive (ISO, BIN…) : identification rapide par nom + taille.
-# Lire 8 Go d'ISO Xbox 360 sur un NAS pour un CRC prend des minutes par jeu ;
-# si le nom ET la taille correspondent exactement à une entrée du DAT, on la retient
-# sans lire le contenu. La « Vérification approfondie » force le CRC complet.
+# Gros fichiers hors archive (ISO, BIN…) : identification SANS lecture (case « ISO nom + taille »).
+# Un CRC32 d'ISO Xbox 360 lit 7 à 8 Go ; et presque tous ces disques ont l'une des
+# 4 tailles standard, donc le filtre taille n'élimine rien. En mode rapide, un fichier
+# ≥ QUICK_MATCH_MIN_SIZE n'est jamais lu : soit le DAT l'identifie par le nom et la
+# taille, soit il reste « non identifié » sans avoir été touché. Le CRC affiché est
+# alors celui du DAT, pas un hash calculé. Case décochée (ou Vérification approfondie) :
+# CRC complet, un gros fichier à la fois.
 QUICK_MATCH_MIN_SIZE = 64 * 1024 * 1024
-QUICK_MATCH_MSG = "Nom + taille conformes (CRC non calculé — cochez Vérification approfondie pour le vérifier)"
+QUICK_MATCH_MSGS = {
+    "exact": "Identifié nom + taille (CRC non relu)",
+    "relaxed": "Identifié par nom approchant + taille (CRC non relu)",
+    "prefix": "Identifié par début de nom + taille — nom tronqué ? (CRC non relu)",
+    "size": "Identifié par taille unique dans le DAT (CRC non relu)",
+}
+UNIDENTIFIED_MSG = "Gros fichier non identifié par nom + taille — CRC non relu (décochez « ISO nom + taille » pour le calculer)"
+_PREFIX_MIN_LEN = 8
+_APOSTROPHES = "'’‘`´ʼ"
+_DASHES = "‐‑‒–—―-_"
 
 
-def _quick_match_index(games_list: List[Dict]) -> Dict[Tuple[str, int], Dict[str, Any]]:
-    """(nom de fichier en minuscules, taille) → hashes DAT, pour les entrées assez grosses."""
-    idx: Dict[Tuple[str, int], Dict[str, Any]] = {}
-    for g in games_list:
-        size = int(g.get("size") or 0)
-        if size < QUICK_MATCH_MIN_SIZE or g.get("is_disk"):
-            continue
-        crc_i = g.get("crc_int", -1)
-        sha1 = (g.get("sha1") or "").lower()
-        if (crc_i is None or crc_i < 0) and not sha1:
-            continue
-        for name in (g.get("rom_name"), g.get("dump_name")):
-            if name:
-                idx.setdefault((Path(name).name.lower(), size), {
-                    "size": size,
-                    "crc": f"{crc_i:08x}" if crc_i is not None and crc_i >= 0 else "",
-                    "crc_int": crc_i if crc_i is not None else -1,
-                    "md5": "", "sha1": sha1,
-                })
-    return idx
+def _relax_name(name: str) -> str:
+    """Nom « assoupli » : sans extension, accents, casse, apostrophes, tirets ni ponctuation."""
+    stem = Path(name).stem if Path(name).suffix else name
+    s = unicodedata.normalize("NFKD", stem)
+    s = "".join(c for c in s if not unicodedata.combining(c)).lower()
+    s = "".join("" if c in _APOSTROPHES else " " if c in _DASHES else c for c in s)
+    s = re.sub(r"[^\w]+", " ", s)
+    return " ".join(s.split())
+
+
+class _QuickIndex:
+    """Index du DAT pour identifier un gros fichier par son nom et sa taille (stat() seul)."""
+
+    def __init__(self, games_list: List[Dict]):
+        self.exact: Dict[Tuple[str, int], Dict[str, Any]] = {}
+        self.relaxed: Dict[Tuple[str, int], Dict[int, Dict[str, Any]]] = {}
+        self.by_size: Dict[int, List[Tuple[List[str], Dict[str, Any]]]] = {}
+        for g in games_list:
+            size = int(g.get("size") or 0)
+            if size < QUICK_MATCH_MIN_SIZE or g.get("is_disk"):
+                continue
+            crc_i = g.get("crc_int", -1)
+            sha1 = (g.get("sha1") or "").lower()
+            if (crc_i is None or crc_i < 0) and not sha1:
+                continue
+            hashes = {
+                "size": size,
+                "crc": f"{crc_i:08x}" if crc_i is not None and crc_i >= 0 else "",
+                "crc_int": crc_i if crc_i is not None else -1,
+                "md5": "", "sha1": sha1,
+            }
+            names = [n for n in (g.get("rom_name"), g.get("dump_name")) if n]
+            relaxed = sorted({_relax_name(Path(n).name) for n in names})
+            for n in names:
+                self.exact.setdefault((Path(n).name.lower(), size), hashes)
+            for r in relaxed:
+                self.relaxed.setdefault((r, size), {})[id(g)] = hashes
+            self.by_size.setdefault(size, []).append((relaxed, hashes))
+
+    def lookup(self, filename: str, size: int) -> Optional[Tuple[Dict[str, Any], str]]:
+        """(empreintes DAT, méthode) ou None. Les méthodes approchées exigent l'unicité."""
+        hit = self.exact.get((filename.lower(), size))
+        if hit:
+            return hit, "exact"
+        r = _relax_name(filename)
+        same = self.relaxed.get((r, size)) or {}
+        if len(same) == 1:
+            return next(iter(same.values())), "relaxed"
+        cands = self.by_size.get(size) or []
+        if len(r) >= _PREFIX_MIN_LEN:
+            pref = [h for names, h in cands if any(n.startswith(r) for n in names)]
+            if len(pref) == 1:
+                return pref[0], "prefix"
+        if len(cands) == 1:
+            return cands[0][1], "size"
+        return None
 
 
 # Cache des empreintes calculées (fichiers hors archive) : un CRC / SHA-1 lu une fois
@@ -1096,11 +1170,6 @@ class _HashCache:
 HASH_CACHE = _HashCache(HASH_CACHE_FILE)
 
 
-# Gros fichiers lus en même temps : 2 au plus. Sur un NAS (disques durs, SMB),
-# 30 lectures séquentielles parallèles deviennent des accès aléatoires et
-# s'effondrent ; deux flux saturent déjà le réseau. Les petits fichiers restent parallèles.
-BIG_READ_MIN_SIZE = 64 * 1024 * 1024
-BIG_READ_PARALLEL = 2
 _BIG_READ_SEM = threading.BoundedSemaphore(BIG_READ_PARALLEL)
 
 
@@ -1138,10 +1207,11 @@ def _hash_loose_task(args: Tuple) -> Dict:
         if cached:
             return res(cached, cached=True)
 
-    if quick_index and size >= QUICK_MATCH_MIN_SIZE:
-        hit = quick_index.get((fpath.name.lower(), size))
-        if hit:
-            return res(dict(hit), quick=True)
+    big_quick = quick_index is not None and size >= QUICK_MATCH_MIN_SIZE
+    if big_quick:
+        found = quick_index.lookup(fpath.name, size)
+        if found:
+            return res(dict(found[0]), quick=found[1])
 
     # CHD : SHA1 header instantané (MAME / MAMERedump) ; header illisible → hash du fichier
     if fpath.suffix.lower() == ".chd":
@@ -1152,6 +1222,10 @@ def _hash_loose_task(args: Tuple) -> Dict:
     # Mode CRC : filtre taille (aucune entrée du DAT n'a cette taille → inutile de lire)
     if hash_mode != "sha1" and size_set and size not in size_set:
         return res({"size": size, "crc": "", "crc_int": -1, "md5": "", "sha1": ""}, size_mismatch=True)
+
+    # Mode rapide : un gros fichier n'est jamais lu, même non identifié
+    if big_quick:
+        return res({"size": size, "crc": "", "crc_int": -1, "md5": "", "sha1": ""}, unidentified=True)
 
     if cheap_only:
         return res(needs_hash=True, size=size)
@@ -1431,6 +1505,7 @@ def _collect_files(
     skip_zips: bool = False,
     deep: bool = False,
     games_list: Optional[List[Dict]] = None,
+    quick_id: bool = True,
 ) -> List[Dict]:
     loose: List[str] = []
     zips: List[str] = []
@@ -1478,7 +1553,7 @@ def _collect_files(
     workers = max(4, min(_MAX_WORKERS, max(len(loose) + len(zips), 1)))
 
     if loose:
-        quick_index = None if deep else _quick_match_index(games_list or [])
+        quick_index = _QuickIndex(games_list or []) if quick_id and not deep else None
         HASH_CACHE.load()
         # chunksize adaptatif : petits lots si peu de fichiers
         chunk = 8 if len(loose) > 64 else max(1, len(loose) // max(workers, 1) or 1)
@@ -1496,7 +1571,8 @@ def _collect_files(
                         SCAN_PROGRESS.step()
                         continue
                     SCAN_PROGRESS.step(kind="cached" if result.get("cached") else
-                                       "quick" if result.get("quick") else "")
+                                       "quick" if result.get("quick") else
+                                       "skipped" if result.get("unidentified") else "")
                     slots[i] = result
             # 2e passe : lecture complète (CRC / SHA-1) des fichiers restants
             if pending:
@@ -2386,8 +2462,12 @@ def _scan_roms(
     dat_mode: str = "standard",
     max_depth: int = 0,
     deep: bool = False,
+    quick_id: bool = True,
 ) -> List[Dict]:
-    """deep=True : contenu des archives décompressé et contrôlé (lent, détecte la corruption)."""
+    """
+    deep=True : contenu des archives décompressé et contrôlé, CRC complet des gros fichiers.
+    quick_id=True : gros fichiers identifiés par nom + taille, jamais lus (voir _QuickIndex).
+    """
     max_depth = max(0, min(int(max_depth or 0), 2))
     if dat_mode == "arcade":
         return scan_mame_nonmerged(rom_dir, games_list, max_depth=max_depth, deep=deep)
@@ -2407,7 +2487,7 @@ def _scan_roms(
     results: List[Dict] = []
     inventory = _collect_files(
         rom_dir, size_set, hash_mode, max_depth=max_depth, skip_zips=skip_zips, deep=deep,
-        games_list=games_list,
+        games_list=games_list, quick_id=quick_id,
     )
     SCAN_PROGRESS.phase("match")
 
@@ -2536,7 +2616,7 @@ def _scan_roms(
             "sha1": h.get("sha1", ""),
             "is_zip": it["is_zip"],
             "zip_member": it.get("zip_member") or "",
-            "message": QUICK_MATCH_MSG if it.get("quick") else "",
+            "message": QUICK_MATCH_MSGS.get(it.get("quick") or "", ""),
             "quick": bool(it.get("quick")),
             "description": g.get("description") or "",
             "cloneof": g.get("cloneof") or "",
@@ -2568,6 +2648,14 @@ def _scan_roms(
                 "md5": "", "sha1": "", "is_zip": it["is_zip"],
                 "zip_member": it.get("zip_member") or "",
                 "message": "Taille hors DAT (CRC non calcule)",
+            })
+            continue
+        if it.get("unidentified"):
+            results.append({
+                "status": "bad", "game": "", "expected": "", "found": it["found"],
+                "path": it["path"], "size": h.get("size", 0), "crc": "",
+                "md5": "", "sha1": "", "is_zip": False, "zip_member": "",
+                "message": UNIDENTIFIED_MSG, "unidentified": True,
             })
             continue
         if id(it) in candidate_ids:
@@ -3655,6 +3743,8 @@ def _bulk_deletable(row: Dict) -> bool:
         return False
     if (row.get("mtype") or "") == "extra":
         return False
+    if row.get("unidentified"):  # jamais lu : rien ne prouve qu'il est mauvais
+        return False
     return True
 
 
@@ -4474,6 +4564,7 @@ def _api_scan_body(path: Path, body: dict):
             dat_mode,
             max_depth=max_depth,
             deep=bool(body.get("deep")),
+            quick_id=body.get("quick_id", True) is not False,
         )
         # Profondeur effective (peut avoir été relevée pour CHD)
         has_disks = any(g.get("is_disk") for g in (STATE.get("games_list") or []))
@@ -7509,6 +7600,7 @@ def api_profiles_scan_system(profile_id: str):
             hash_mode or "crc", header.get("dat_mode", "standard"),
             max_depth=max_depth,
             deep=bool(body.get("deep")),
+            quick_id=body.get("quick_id", True) is not False,
         )
         STATE["results"] = results
         STATE["roms_path"] = str(rpath)
