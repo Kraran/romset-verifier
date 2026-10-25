@@ -419,5 +419,9 @@
   "kbd.clear": "odznacz",
   "kbd.key_del": "Del",
   "kbd.key_esc": "Esc",
-  "col.rom_count": "ROMs"
+  "col.rom_count": "ROMs",
+  "dats.st_installed": "Aktualny",
+  "dats.st_update": "Dostępna aktualizacja",
+  "ui.update": "Aktualizuj",
+  "ui.superseded": "Odłożono starsze wersje: {n}"
 }

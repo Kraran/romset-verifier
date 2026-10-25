@@ -419,5 +419,9 @@
   "kbd.clear": "Auswahl aufheben",
   "kbd.key_del": "Entf",
   "kbd.key_esc": "Esc",
-  "col.rom_count": "ROMs"
+  "col.rom_count": "ROMs",
+  "dats.st_installed": "Aktuell",
+  "dats.st_update": "Update verfügbar",
+  "ui.update": "Aktualisieren",
+  "ui.superseded": "{n} ältere Version(en) beiseitegelegt"
 }

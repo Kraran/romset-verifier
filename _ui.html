@@ -374,10 +374,15 @@ table.results tr:hover .row-acts, table.results tr.selected .row-acts { opacity:
   display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 30px; padding: 0 16px; flex-shrink: 0;
   border-top: 1px solid var(--border); background: var(--bg2); color: var(--text2); font-size: 12px;
 }
+.actions-bar .sep:has(+ #rowCount:empty) { display: none; }
 .actions-bar .info { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kbd-hints { display: flex; gap: 16px; flex: none; color: var(--text3); }
 .kbd-hints kbd + kbd { margin-left: 2px; }
 @media (max-width: 1100px) { .kbd-hints { display: none; } }
+.dat-badge { flex: none; height: 20px; padding: 0 8px; border-radius: 999px; font: 600 11px/20px var(--font); white-space: nowrap; }
+.dat-badge.ok { color: var(--green); background: var(--green-soft); }
+.dat-badge.upd { color: var(--amber); background: var(--amber-soft); }
+#datsList .modal-item .icon { width: 18px; height: 18px; color: var(--text3); opacity: 1; }
 .tool-title { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-weight: 600; }
 .tool-title .icon { color: var(--accent-h); }
 .subdir-opt { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text2); cursor: pointer; user-select: none; white-space: nowrap; }
@@ -1221,7 +1226,7 @@ body.arcade-mode th.arcade-only, body.arcade-mode td.arcade-only { display: tabl
 </div>
 
 <div class="actions-bar">
-  <span class="info"><span id="selInfo">Aucune sélection</span> · <span id="rowCount"></span></span>
+  <span class="info"><span id="selInfo">Aucune sélection</span><span class="sep"> · </span><span id="rowCount"></span></span>
   <span class="kbd-hints">
     <span><kbd>Ctrl</kbd><kbd>F</kbd> <span data-i18n="kbd.search">rechercher</span></span>
     <span><kbd>Ctrl</kbd><kbd>A</kbd> <span data-i18n="kbd.select_all">tout sélectionner</span></span>
@@ -4607,14 +4612,28 @@ function renderDatsList() {
   }
   list.innerHTML = rows.map(it => {
     const f = it.file || '';
-    const isLocal = it.local === '1' || f.indexOf('/') === 0 || /^[A-Za-z]:[\\/]/.test(f);
-    const action = isLocal ? t('ui.load') : t('ui.download');
-    return '<div class="modal-item" onclick="downloadOne(' + jsArg(it.file) + ')">' +
-      '<span class="icon">📄</span><div style="flex:1;min-width:0">' +
+    const isLocal = it._local || it.local === '1' || f.indexOf('/') === 0 || /^[A-Za-z]:[\\/]/.test(f);
+    // État local d'un DAT du catalogue : à jour, ancienne version présente, absent
+    let badge = '';
+    let action = isLocal ? t('ui.load') : t('ui.download');
+    if (!isLocal && it.status === 'installed') {
+      badge = '<span class="dat-badge ok">' + esc(t('dats.st_installed')) + '</span>';
+      action = t('ui.load');
+    } else if (!isLocal && it.status === 'update') {
+      badge = '<span class="dat-badge upd">' + esc(t('dats.st_update')) + '</span>';
+      action = t('ui.update');
+    }
+    const click = it._local ? 'pickLocalDat(' + jsArg(it.file) + ')' : 'downloadOne(' + jsArg(it.file) + ')';
+    return '<div class="modal-item" onclick="' + click + '">' +
+      '<svg class="icon"><use href="#i-' + (it._local ? 'folder' : 'file-text') + '"></use></svg><div style="flex:1;min-width:0">' +
       '<div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(it.name) + '</div>' +
-      '<div style="font-size:11px;color:var(--text2)">' + esc(it.version || '') + '</div></div>' +
-      '<span style="font-size:11px;color:var(--accent)">' + action + '</span></div>';
+      '<div style="font-size:12px;color:var(--text3)">' + esc(it.version || '') + '</div></div>' +
+      badge + '<span style="font-size:12px;color:var(--accent-h);white-space:nowrap">' + esc(action) + '</span></div>';
   }).join('');
+}
+
+function supersededNote(data) {
+  return data && data.superseded ? ' · ' + t('ui.superseded', { n: data.superseded }) : '';
 }
 
 async function downloadOne(file) {
@@ -4624,8 +4643,10 @@ async function downloadOne(file) {
     const data = await api('/api/dats/download_one', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pack: DAT_PACK, file }) });
     if (data.error) { toast(data.error, false); document.getElementById('datsStatus').textContent = data.error; return; }
     document.getElementById('datPath').value = data.path;
-    document.getElementById('datsStatus').textContent = 'OK → ' + data.path;
-    toast(t('ui.dat_ready', { file: data.file }));
+    document.getElementById('datsStatus').textContent = 'OK → ' + data.path + supersededNote(data);
+    toast(t('ui.dat_ready', { file: data.file }) + supersededNote(data));
+    DAT_ITEMS.forEach(function (it) { if (it.file === file) it.status = 'installed'; });
+    renderDatsList();
     await loadDat();
   } catch (e) { toast(String(e), false); }
   finally { hideLoading(); }
@@ -4637,8 +4658,8 @@ async function downloadPack() {
   {
     const ok = await openConfirm(
       t('dats.download_title') || 'Télécharger',
-      (t('dats.download_confirm') || 'Télécharger le pack {hint} ?\nLes DAT seront extraits dans dat/{pack}/')
-        .replace('{hint}', hint).replace('{pack}', DAT_PACK),
+      esc((t('dats.download_confirm') || 'Télécharger le pack {hint} ?\nLes DAT seront extraits dans dat/{pack}/')
+        .replace('{hint}', hint).replace('{pack}', DAT_PACK)).replace(/\n/g, '<br>'),
       t('confirm.ok') || 'Confirmer'
     );
     if (!ok) return;
@@ -4648,8 +4669,8 @@ async function downloadPack() {
   try {
     const data = await api('/api/dats/download_pack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pack: DAT_PACK }) });
     if (data.error) { toast(data.error, false); document.getElementById('datsStatus').textContent = data.error; return; }
-    document.getElementById('datsStatus').textContent = t('ui.pack_extracted', { label: data.label, n: data.extracted, dir: data.dir });
-    toast(t('ui.dats_installed', { n: data.extracted }));
+    document.getElementById('datsStatus').textContent = t('ui.pack_extracted', { label: data.label, n: data.extracted, dir: data.dir }) + supersededNote(data);
+    toast(t('ui.dats_installed', { n: data.extracted }) + supersededNote(data));
     await setPack(DAT_PACK);
   } catch (e) { toast(String(e), false); }
   finally { hideLoading(); }
@@ -4664,11 +4685,7 @@ async function loadLocalDats() {
     document.getElementById('datsStatus').textContent = t('ui.n_local_dats', { n: DAT_ITEMS.length });
     const list = document.getElementById('datsList');
     if (!DAT_ITEMS.length) { list.innerHTML = '<div class="modal-item" style="color:var(--text2)">' + esc(t('ui.no_dat_in_dir')) + '</div>'; return; }
-    list.innerHTML = DAT_ITEMS.map(it => '<div class="modal-item" onclick="pickLocalDat(' + jsArg(it.file) + ')">' +
-      '<span class="icon">📁</span><div style="flex:1;min-width:0">' +
-      '<div style="font-weight:500">' + esc(it.name) + '</div>' +
-      '<div style="font-size:11px;color:var(--text2)">' + esc(it.version) + '</div></div>' +
-      '<span style="font-size:11px;color:var(--accent)">' + esc(t('ui.load')) + '</span></div>').join('');
+    renderDatsList();  // même rendu que le catalogue : la recherche fonctionne aussi ici
   } catch (e) { document.getElementById('datsStatus').textContent = String(e); }
 }
 
@@ -4679,7 +4696,7 @@ function pickLocalDat(path) {
 }
 
 document.getElementById('datsSearch').addEventListener('input', () => {
-  if (DAT_ITEMS.length && !DAT_ITEMS[0]._local) renderDatsList();
+  if (DAT_ITEMS.length) renderDatsList();
 });
 
 window.addEventListener('load', () => {

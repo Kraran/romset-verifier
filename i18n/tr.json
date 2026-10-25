@@ -419,5 +419,9 @@
   "kbd.clear": "seçimi kaldır",
   "kbd.key_del": "Del",
   "kbd.key_esc": "Esc",
-  "col.rom_count": "ROM'lar"
+  "col.rom_count": "ROM'lar",
+  "dats.st_installed": "Güncel",
+  "dats.st_update": "Güncelleme var",
+  "ui.update": "Güncelle",
+  "ui.superseded": "{n} eski sürüm kenara alındı"
 }
