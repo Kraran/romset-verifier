@@ -7,6 +7,7 @@ ROOT = Path(SPECPATH)
 datas = [
     (str(ROOT / "_ui.html"), "."),
     (str(ROOT / "i18n"), "i18n"),
+    (str(ROOT / "fonts"), "fonts"),
 ]
 for name in (
     "icon.png", "icon-32.png", "icon-256.png", "icon-512.png",
